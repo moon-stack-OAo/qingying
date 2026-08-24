@@ -5,7 +5,7 @@
 **版本说明**以 [CHANGELOG.md](./CHANGELOG.md) 为准（与 `package.json` 的 `version` 对齐）；README 不单独维护版本号。
 
 基于 **Electron + Vue 3 + TypeScript + Element Plus**。  
-通过内置 `ffmpeg-static` / `ffprobe-static` 调用 FFmpeg，无需系统预先安装 FFmpeg。
+通过内置 `ffmpeg-static` / `@ffprobe-installer/ffprobe` 调用 FFmpeg，无需系统预先安装 FFmpeg。
 
 ## 功能
 
@@ -60,7 +60,7 @@ cd qingying
 npm install
 ```
 
-> `ffmpeg-static` / `ffprobe-static` 会下载对应平台二进制，需可访问 npm 与 GitHub/相关 CDN。  
+> `ffmpeg-static` / `@ffprobe-installer/ffprobe` 会下载对应平台二进制，需可访问 npm 与相关 CDN。  
 > 若网络失败，可配置国内镜像后重试：
 >
 > ```bash
@@ -252,7 +252,7 @@ git push origin v1.0.0
 | 并行队列  | `taskQueue` 支持 concurrency，进度按 taskId 推送                          |
 | 进度    | ffmpeg `-progress pipe:1` + stderr 兜底解析                           |
 | 测试    | vitest（`npm test`）                                                |
-| 打包二进制 | `asarUnpack` 解包 `ffmpeg-static` / `ffprobe-static`                |
+| 打包二进制 | `asarUnpack` 解包 `ffmpeg-static` / `@ffprobe-installer`            |
 
 ## 已知限制
 

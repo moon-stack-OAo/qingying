@@ -11,11 +11,12 @@ import { isImageMode } from '../../shared/ffmpegLogic'
 import {
   buildOutputPath,
   detectHardwareEncoders,
-  getFileSize,
+  getFileSizeAsync,
+  pathExistsAsync,
   runCompress,
   runMediaCompose,
   runVideoConcat,
-  uniqueOutputPath
+  uniqueOutputPathAsync
 } from './ffmpeg'
 import { processImage } from './image'
 import { getSettings } from './settings'
@@ -47,6 +48,8 @@ export class TaskQueue {
   private concurrency = 2
   /** 防止 pump 重入造成竞态 */
   private pumping = false
+  /** pumping 期间又有入队/取消时置位，结束再扫一轮 */
+  private pumpDirty = false
   private listeners = new Set<TaskQueueListener>()
 
   /** 本批统计（running+queue 从 >0 变为 0 时汇总） */
@@ -166,12 +169,12 @@ export class TaskQueue {
     return single ? [single] : []
   }
 
-  /** 多文件输入大小求和 */
-  private sumInputSize(paths: string[]): number | undefined {
+  /** 多文件输入大小求和（异步，超时跳过，避免 UNC 卡死） */
+  private async sumInputSizeAsync(paths: string[]): Promise<number | undefined> {
     let total = 0
     let any = false
     for (const p of paths) {
-      const s = getFileSize(p)
+      const s = await getFileSizeAsync(p)
       if (typeof s === 'number') {
         total += s
         any = true
@@ -180,26 +183,56 @@ export class TaskQueue {
     return any ? total : undefined
   }
 
+  /** 出队后补齐输出路径 / 输入大小；输入不可达则失败 */
+  private async prepareRunningTask(
+    task: CompressTask,
+    paths: string[]
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    const primary = paths[0] || task.inputPath
+    if (!primary) {
+      return { ok: false, error: '输入文件无效' }
+    }
+
+    const reachable = await pathExistsAsync(primary)
+    if (!reachable) {
+      return {
+        ok: false,
+        error: `无法访问输入文件（网络盘超时或不存在）: ${path.basename(primary)}`
+      }
+    }
+
+    try {
+      const rawOut = buildOutputPath(primary, task.options)
+      task.outputPath = await uniqueOutputPathAsync(rawOut)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { ok: false, error: msg || '无法生成输出路径' }
+    }
+
+    if (task.inputSize == null) {
+      task.inputSize =
+        paths.length > 1
+          ? await this.sumInputSizeAsync(paths)
+          : await getFileSizeAsync(primary)
+    }
+    return { ok: true }
+  }
+
   enqueue(task: CompressTask): void {
+    // 同 id 再入队：释放旧 running / 去掉旧 queued，避免僵尸任务占满并发导致一直「排队中」
+    this.dropExisting(task.id, 'replaced')
+
     const paths = this.resolveInputPaths(task)
     const primaryInput = paths[0] || task.inputPath
-    // 始终按当前 options 重建输出路径，避免旧模板/模式残留
-    const rawOut = buildOutputPath(primaryInput, task.options)
-    const outputPath = uniqueOutputPath(rawOut)
-    // 任务开始前记录输入大小（多输入求和）
-    const inputSize =
-      task.inputSize ??
-      (paths.length > 1
-        ? this.sumInputSize(paths)
-        : getFileSize(primaryInput))
+    // 入队阶段禁止同步磁盘探测（existsSync/stat）：UNC/局域网盘会卡死 IPC。
+    // 输出去重与 inputSize 延后到 runItem。
     const prepared: CompressTask = {
       ...task,
       inputPath: primaryInput,
       inputPaths: paths.length > 1 ? paths : task.inputPaths,
-      outputPath,
+      outputPath: '',
       status: 'queued',
-      progress: 0,
-      inputSize
+      progress: 0
     }
     const item: QueueItem = {
       task: prepared,
@@ -218,6 +251,43 @@ export class TaskQueue {
   }
 
   /**
+   * 去掉同 id 的排队项；若正在跑则发取消信号并立即释放并发槽。
+   * @param reason replaced=被同 id 新任务替换（不向 UI 报取消）；cancelled=用户取消
+   */
+  private dropExisting(
+    taskId: string,
+    reason: 'replaced' | 'cancelled'
+  ): void {
+    const running = this.running.get(taskId)
+    if (running) {
+      running.signal.cancelled = true
+      this.running.delete(taskId)
+      if (reason === 'cancelled') {
+        this.batchCancelled += 1
+        this.send(IpcChannels.TASK_END, {
+          taskId,
+          status: 'cancelled',
+          error: '已取消',
+          inputSize: running.task.inputSize
+        } satisfies TaskEndPayload)
+      }
+    }
+    for (let i = this.queue.length - 1; i >= 0; i -= 1) {
+      if (this.queue[i].task.id !== taskId) continue
+      const [item] = this.queue.splice(i, 1)
+      if (reason === 'cancelled') {
+        this.batchCancelled += 1
+        this.send(IpcChannels.TASK_END, {
+          taskId: item.task.id,
+          status: 'cancelled',
+          error: '已取消',
+          inputSize: item.task.inputSize
+        } satisfies TaskEndPayload)
+      }
+    }
+  }
+
+  /**
    * 向渲染进程推送完整任务（局域网上传入队时，桌面 UI 同步列表）
    */
   notifyTaskAdded(task: CompressTask): void {
@@ -231,47 +301,27 @@ export class TaskQueue {
   }
 
   cancel(taskId: string): void {
-    const running = this.running.get(taskId)
-    if (running) {
-      running.signal.cancelled = true
-      return
-    }
-    const idx = this.queue.findIndex((q) => q.task.id === taskId)
-    if (idx >= 0) {
-      const [item] = this.queue.splice(idx, 1)
-      this.batchCancelled += 1
-      const end: TaskEndPayload = {
-        taskId: item.task.id,
-        status: 'cancelled',
-        error: '已取消',
-        inputSize: item.task.inputSize
-      }
-      this.send(IpcChannels.TASK_END, end)
+    const had =
+      this.running.has(taskId) || this.queue.some((q) => q.task.id === taskId)
+    this.dropExisting(taskId, 'cancelled')
+    if (had) {
       this.maybeNotifyBatchEnd()
+      void this.pump()
     }
   }
 
   cancelAll(): void {
-    // 杀掉所有运行中进程
-    Array.from(this.running.values()).forEach((item) => {
-      item.signal.cancelled = true
-    })
-    // 清空等待队列
-    const pending = this.queue.splice(0, this.queue.length)
-    for (const item of pending) {
-      this.batchCancelled += 1
-      const end: TaskEndPayload = {
-        taskId: item.task.id,
-        status: 'cancelled',
-        error: '已取消',
-        inputSize: item.task.inputSize
-      }
-      this.send(IpcChannels.TASK_END, end)
+    const ids = Array.from(
+      new Set([
+        ...Array.from(this.running.keys()),
+        ...this.queue.map((q) => q.task.id)
+      ])
+    )
+    for (const id of ids) {
+      this.dropExisting(id, 'cancelled')
     }
-    // 若没有运行中任务，立即汇总；否则等 runItem finally
-    if (this.running.size === 0) {
-      this.maybeNotifyBatchEnd()
-    }
+    this.maybeNotifyBatchEnd()
+    void this.pump()
   }
 
   private send(channel: string, payload: unknown): void {
@@ -299,16 +349,23 @@ export class TaskQueue {
   }
 
   private async pump(): Promise<void> {
-    if (this.pumping) return
+    // 重入时只记脏标记，结束时再扫一遍，避免 enqueue 撞上 pumping 后永远不出队
+    if (this.pumping) {
+      this.pumpDirty = true
+      return
+    }
     this.pumping = true
     try {
-      while (this.running.size < this.concurrency && this.queue.length > 0) {
-        const next = this.queue.shift()
-        if (!next) break
-        this.running.set(next.task.id, next)
-        // 异步执行，不 await 全部，各自完成后回调
-        void this.runItem(next)
-      }
+      do {
+        this.pumpDirty = false
+        while (this.running.size < this.concurrency && this.queue.length > 0) {
+          const next = this.queue.shift()
+          if (!next) break
+          this.running.set(next.task.id, next)
+          // 异步执行，不 await 全部，各自完成后回调
+          void this.runItem(next)
+        }
+      } while (this.pumpDirty)
     } finally {
       this.pumping = false
     }
@@ -325,8 +382,13 @@ export class TaskQueue {
       fallbackNote?: string
       commandLine?: string
     },
-    signal: { cancelled: boolean }
+    signal: { cancelled: boolean },
+    item?: QueueItem
   ): void {
+    // 同 id 已被替换：旧 run 收尾时不再向 UI 推终态，避免盖掉新任务
+    if (item && this.running.get(task.id) !== item) {
+      return
+    }
     if (result.code === -1 || signal.cancelled) {
       this.batchCancelled += 1
       this.send(IpcChannels.TASK_END, {
@@ -463,14 +525,39 @@ export class TaskQueue {
 
   private async runItem(item: QueueItem): Promise<void> {
     const { task, signal } = item
+    const isCurrent = (): boolean => this.running.get(task.id) === item
 
     const onProgress = (payload: ProgressPayload): void => {
+      if (!isCurrent()) return
       this.send(IpcChannels.TASK_PROGRESS, payload)
     }
+
+    // 一出队即通知「运行中」，避免硬件探测期间 UI 一直停在「排队中」
+    onProgress({ taskId: task.id, percent: 0 })
 
     try {
       const mode = task.options?.mode
       const paths = this.resolveInputPaths(task)
+
+      const prepared = await this.prepareRunningTask(task, paths)
+      if (!prepared.ok) {
+        this.emitResult(
+          task,
+          { code: 1, error: prepared.error, inputSize: task.inputSize },
+          signal,
+          item
+        )
+        return
+      }
+      if (signal.cancelled) {
+        this.emitResult(
+          task,
+          { code: -1, error: '已取消', inputSize: task.inputSize },
+          signal,
+          item
+        )
+        return
+      }
 
       if (isImageMode(mode)) {
         await this.runImageTask(task, paths, onProgress, signal)
@@ -486,7 +573,7 @@ export class TaskQueue {
           onProgress,
           signal
         })
-        this.emitResult(task, result, signal)
+        this.emitResult(task, result, signal, item)
         return
       }
 
@@ -499,7 +586,7 @@ export class TaskQueue {
           onProgress,
           signal
         })
-        this.emitResult(task, result, signal)
+        this.emitResult(task, result, signal, item)
         return
       }
 
@@ -514,34 +601,50 @@ export class TaskQueue {
               error: '请先编辑并设置至少一个打码区域',
               inputSize: task.inputSize
             },
-            signal
+            signal,
+            item
           )
           return
         }
       }
 
-      const isAudio = mode === 'audio'
+      // 打码一律软编并跳过硬件试编；其它视频模式才探测
       let detect = null
-      if (!isAudio) {
+      const isMosaic = mode === 'video-mosaic'
+      if (!isMosaic && mode !== 'audio') {
         try {
-          detect = await detectHardwareEncoders()
+          detect = await detectHardwareEncoders(false, signal)
         } catch {
           detect = null
         }
+      }
+
+      // 探测阶段可能较久；取消后立即结束，不进入编码
+      if (signal.cancelled) {
+        this.emitResult(
+          task,
+          { code: -1, error: '已取消', inputSize: task.inputSize },
+          signal,
+          item
+        )
+        return
       }
 
       const result = await runCompress({
         taskId: task.id,
         inputPath: task.inputPath,
         outputPath: task.outputPath,
-        options: task.options,
+        options: isMosaic
+          ? { ...task.options, encoder: 'software' }
+          : task.options,
         onProgress,
         signal,
         detect
       })
 
-      this.emitResult(task, result, signal)
+      this.emitResult(task, result, signal, item)
     } catch (e) {
+      if (!isCurrent()) return
       const msg = e instanceof Error ? e.message : String(e)
       this.batchFailed += 1
       this.lastFailedError = msg
@@ -552,7 +655,10 @@ export class TaskQueue {
         inputSize: task.inputSize
       } satisfies TaskEndPayload)
     } finally {
-      this.running.delete(task.id)
+      // 仅当 map 仍指向本 item 时删除（同 id 已被替换/提前释放则不动）
+      if (this.running.get(task.id) === item) {
+        this.running.delete(task.id)
+      }
       this.maybeNotifyBatchEnd()
       void this.pump()
     }

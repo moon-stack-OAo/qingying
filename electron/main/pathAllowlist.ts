@@ -67,20 +67,35 @@ export function safeJoinUnderRoot(root: string, urlPath: string): string | null 
   return joined
 }
 
-/** 登记单个路径：已存在目录→目录；否则→文件并允许其父目录 */
+/** 看起来像目录：末尾分隔符，或无扩展名且非 UNC 文件启发式 */
+function looksLikeDirectory(raw: string): boolean {
+  if (/[\\/]$/.test(raw)) return true
+  const base = path.basename(raw)
+  // 有扩展名多半是文件；勿对 UNC 做 existsSync（会卡死）
+  if (base.includes('.')) return false
+  return false
+}
+
+/** 登记单个路径：目录→目录；否则→文件并允许其父目录（避免 UNC 上同步 existsSync） */
 export function allowPath(p: string): void {
   const raw = (p || '').trim()
   if (!raw) return
   const c = canonicalizePath(raw)
   if (!c) return
 
-  try {
-    if (fs.existsSync(raw) && fs.statSync(raw).isDirectory()) {
-      allowedDirs.add(c)
-      return
+  const isUnc = /^[\\/]{2}/.test(raw) || /^[\\/]{2}/.test(c)
+  if (!isUnc) {
+    try {
+      if (fs.existsSync(raw) && fs.statSync(raw).isDirectory()) {
+        allowedDirs.add(c)
+        return
+      }
+    } catch {
+      // 按文件处理
     }
-  } catch {
-    // 按文件处理
+  } else if (looksLikeDirectory(raw)) {
+    allowedDirs.add(c)
+    return
   }
 
   allowedFiles.add(c)

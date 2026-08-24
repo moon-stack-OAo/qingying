@@ -5,6 +5,7 @@ import {
   clampCropRect,
   computeContainRect,
   defaultCropRect,
+  defaultMosaicRect,
   displayToNatural,
   naturalToDisplay,
   type CropRect
@@ -18,10 +19,13 @@ const props = withDefaults(
     modelValue: CropRect
     aspectRatio?: number | null
     disabled?: boolean
+    /** crop=居中约 80%；mosaic=居中约 10%×10% */
+    defaultMode?: 'crop' | 'mosaic'
   }>(),
   {
     aspectRatio: null,
-    disabled: false
+    disabled: false,
+    defaultMode: 'crop'
   }
 )
 
@@ -123,13 +127,24 @@ watch(
   }
 )
 
+// 父级把框清成空矩形时重新套默认（打码添加区域后常见）
+watch(
+  () => [props.modelValue.w, props.modelValue.h] as const,
+  ([w, h]) => {
+    if (!(w > 0 && h > 0)) ensureDefaultRect()
+  }
+)
+
 function ensureDefaultRect(): void {
   const nw = props.naturalWidth
   const nh = props.naturalHeight
   if (!(nw > 0 && nh > 0)) return
   const v = props.modelValue
   if (!(v.w > 0 && v.h > 0)) {
-    let next = defaultCropRect(nw, nh)
+    let next =
+      props.defaultMode === 'mosaic'
+        ? defaultMosaicRect(nw, nh)
+        : defaultCropRect(nw, nh)
     if (props.aspectRatio != null && props.aspectRatio > 0) {
       next = applyAspectRatio(next, props.aspectRatio, nw, nh)
     }

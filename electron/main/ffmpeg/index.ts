@@ -25,7 +25,10 @@ export {
 export {
   buildOutputPath,
   uniqueOutputPath,
-  getFileSize
+  uniqueOutputPathAsync,
+  pathExistsAsync,
+  getFileSize,
+  getFileSizeAsync
 } from './paths'
 
 export {

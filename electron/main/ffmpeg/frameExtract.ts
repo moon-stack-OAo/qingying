@@ -111,12 +111,20 @@ function probeVideoMeta(
     )
 
     let out = ''
+    let err = ''
     proc.stdout?.on('data', (d: Buffer) => {
       out += d.toString()
     })
+    proc.stderr?.on('data', (d: Buffer) => {
+      err += d.toString()
+    })
     proc.on('error', () => resolve(null))
-    proc.on('close', () => {
+    proc.on('close', (code) => {
       try {
+        if (!out.trim()) {
+          resolve(null)
+          return
+        }
         const parsed = JSON.parse(out) as {
           streams?: Array<{
             width?: number
@@ -145,6 +153,7 @@ function probeVideoMeta(
           const n = parseFloat(String(tagRot))
           if (Number.isFinite(n)) rotation = n
         }
+        // 新版 ffprobe 可能仍带 side_data_list（即使用户自定义新 bin）
         const side = stream?.side_data_list
         if (Array.isArray(side)) {
           for (const sd of side) {
@@ -168,6 +177,10 @@ function probeVideoMeta(
 
         resolve({ width, height, duration })
       } catch {
+        if (code !== 0 && err.trim()) {
+          resolve(null)
+          return
+        }
         resolve(null)
       }
     })
@@ -270,7 +283,10 @@ export async function extractVideoFrameJpeg(
 
   const meta = await probeVideoMeta(filePath)
   if (!meta) {
-    return { ok: false, error: '无法读取视频信息' }
+    return {
+      ok: false,
+      error: '无法读取视频信息（请确认文件含视频流，或在设置中检测 FFmpeg）'
+    }
   }
 
   let timeSec =

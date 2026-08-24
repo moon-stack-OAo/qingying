@@ -504,12 +504,11 @@ function validateStartTask(
 
   const paths = resolveTaskInputPaths(task)
   if (paths.length === 0) {
-    return { ok: false, error: '输入文件不存在' }
+    return { ok: false, error: '输入文件无效' }
   }
+  // 不在此处 existsSync：局域网/UNC 路径同步探测可能卡死整个 IPC，
+  // 存在性改到队列 runItem 内异步检查（带超时）。
   for (const p of paths) {
-    if (!existsSync(p)) {
-      return { ok: false, error: `输入文件不存在: ${basename(p)}` }
-    }
     if (!isPathAllowed(p)) {
       return { ok: false, error: pathNotAllowedError(`输入文件 ${basename(p)}`) }
     }

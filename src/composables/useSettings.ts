@@ -481,12 +481,13 @@ export function useSettings(options: UseSettingsOptions = {}) {
       base.compose = compose
     }
 
-    // 视频打码：默认接近原画（对齐 archive），不带目标体积 / 水印 / 裁切
+    // 视频打码：接近原画 + 强制软件编码，避免硬件试编把首任务卡在「排队中」
     if (taskMode.value === 'video-mosaic') {
       base.presetId = 'archive'
       base.crf = 18
       base.maxEdge = 0
       base.format = 'mp4'
+      base.encoder = 'software'
       delete base.targetSizeMb
       delete base.twoPass
       delete base.watermark

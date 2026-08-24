@@ -665,9 +665,16 @@ export async function runMediaCompose(
   // 解析用户选择的编码器（最终主输出 / concat 重编码用）
   let detect = null
   try {
-    detect = await detectHardwareEncoders()
+    detect = await detectHardwareEncoders(false, signal)
   } catch {
     detect = null
+  }
+  if (signal?.cancelled) {
+    return {
+      code: -1,
+      error: '已取消',
+      inputSize: inputSize || undefined
+    }
   }
   let resolved: ResolvedEncoder = 'libx264'
   try {

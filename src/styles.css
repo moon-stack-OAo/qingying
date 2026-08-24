@@ -449,6 +449,12 @@ body,
 .hint-inline {
   font-size: var(--fs-sm);
   color: var(--app-fg-muted);
+  white-space: normal;
+  line-height: 1.4;
+}
+
+/* 单词语/短标签 hint，保持紧凑不换行 */
+.hint-inline--tight {
   white-space: nowrap;
 }
 
@@ -686,4 +692,10 @@ html.dark .el-drawer {
 /* 表格空态更轻 */
 .el-table__empty-text {
   color: var(--app-fg-muted);
+}
+
+/* 消息浮层抬高，避免被自定义标题栏挡住 */
+.el-message {
+  z-index: 5000 !important;
+  top: 48px !important;
 }

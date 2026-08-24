@@ -38,57 +38,64 @@ export function setBinaryOverride(dir: string): {
   return { accepted: true }
 }
 
-/** 解析 ffmpeg-static / ffprobe-static 在开发与打包后的路径 */
-function resolveBinaryPath(moduleName: 'ffmpeg-static' | 'ffprobe-static'): string {
-  // 开发环境：直接 require
-  // 打包后：asarUnpack 会把二进制放到 app.asar.unpacked
-  let binPath = ''
-
-  try {
-    if (moduleName === 'ffmpeg-static') {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      binPath = require('ffmpeg-static') as string
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const mod = require('ffprobe-static') as { path: string }
-      binPath = mod.path
-    }
-  } catch {
-    binPath = ''
-  }
-
-  if (!binPath) {
-    return ''
-  }
+/**
+ * 规范化二进制路径：asar → unpacked、去掉 file://
+ */
+function normalizeBinaryPath(binPath: string): string {
+  let p = binPath || ''
+  if (!p) return ''
 
   // 打包后 asar 内路径需替换为 unpacked
-  if (binPath.includes('app.asar') && !binPath.includes('app.asar.unpacked')) {
-    binPath = binPath.replace('app.asar', 'app.asar.unpacked')
+  if (p.includes('app.asar') && !p.includes('app.asar.unpacked')) {
+    p = p.replace('app.asar', 'app.asar.unpacked')
   }
 
   // 某些环境下路径可能带 file:// 前缀
-  if (binPath.startsWith('file://')) {
-    binPath = binPath.replace(/^file:\/\//, '')
-    if (process.platform === 'win32' && binPath.startsWith('/')) {
-      binPath = binPath.slice(1)
+  if (p.startsWith('file://')) {
+    p = p.replace(/^file:\/\//, '')
+    if (process.platform === 'win32' && p.startsWith('/')) {
+      p = p.slice(1)
     }
   }
 
-  return binPath
+  return p
+}
+
+/** 解析 ffmpeg-static 在开发与打包后的路径 */
+function resolveFfmpegStaticPath(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return normalizeBinaryPath(require('ffmpeg-static') as string)
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * 解析 @ffprobe-installer/ffprobe 路径（约 5.x+/2023 essentials，远新于旧 ffprobe-static 4.0.2）
+ */
+function resolveFfprobeInstallerPath(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('@ffprobe-installer/ffprobe') as { path: string }
+    return normalizeBinaryPath(mod?.path || '')
+  } catch {
+    return ''
+  }
 }
 
 export function getFfmpegPath(): string {
   if (overrideDir) {
     return path.join(overrideDir, binaryName('ffmpeg'))
   }
-  return resolveBinaryPath('ffmpeg-static')
+  return resolveFfmpegStaticPath()
 }
 
 export function getFfprobePath(): string {
   if (overrideDir) {
     return path.join(overrideDir, binaryName('ffprobe'))
   }
-  return resolveBinaryPath('ffprobe-static')
+  return resolveFfprobeInstallerPath()
 }
 
 export function checkFfmpegAvailable(): {
@@ -114,7 +121,7 @@ export function checkFfmpegAvailable(): {
       ready: false,
       ffmpegPath,
       ffprobePath,
-      error: '未找到 ffprobe 二进制，请确认已安装 ffprobe-static'
+      error: '未找到 ffprobe 二进制，请确认已安装 @ffprobe-installer/ffprobe'
     }
   }
 

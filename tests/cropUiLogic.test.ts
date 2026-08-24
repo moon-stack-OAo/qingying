@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import {describe, expect, it} from 'vitest'
 import {
   applyAspectRatio,
   clampCropRect,
   computeContainRect,
   defaultCropRect,
+  defaultMosaicRect,
   displayToNatural,
   naturalToDisplay
 } from '../shared/cropUiLogic'
@@ -15,20 +16,20 @@ describe('displayToNatural / naturalToDisplay', () => {
     const natW = 4000
     const natH = 3000
     const n = displayToNatural(200, 150, dispW, dispH, natW, natH)
-    expect(n).toEqual({ x: 1000, y: 750 })
+    expect(n).toEqual({x: 1000, y: 750})
     const d = naturalToDisplay(n.x, n.y, dispW, dispH, natW, natH)
-    expect(d).toEqual({ x: 200, y: 150 })
+    expect(d).toEqual({x: 200, y: 150})
   })
 
   it('非法尺寸返回 0', () => {
-    expect(displayToNatural(10, 10, 0, 100, 100, 100)).toEqual({ x: 0, y: 0 })
-    expect(naturalToDisplay(10, 10, 100, 100, 0, 100)).toEqual({ x: 0, y: 0 })
+    expect(displayToNatural(10, 10, 0, 100, 100, 100)).toEqual({x: 0, y: 0})
+    expect(naturalToDisplay(10, 10, 100, 100, 0, 100)).toEqual({x: 0, y: 0})
   })
 })
 
 describe('clampCropRect', () => {
   it('夹紧越界矩形', () => {
-    expect(clampCropRect({ x: -10, y: -5, w: 500, h: 500 }, 100, 80)).toEqual({
+    expect(clampCropRect({x: -10, y: -5, w: 500, h: 500}, 100, 80)).toEqual({
       x: 0,
       y: 0,
       w: 100,
@@ -37,7 +38,7 @@ describe('clampCropRect', () => {
   })
 
   it('w/h 最小为 1', () => {
-    expect(clampCropRect({ x: 0, y: 0, w: 0, h: -1 }, 50, 50)).toEqual({
+    expect(clampCropRect({x: 0, y: 0, w: 0, h: -1}, 50, 50)).toEqual({
       x: 0,
       y: 0,
       w: 1,
@@ -46,7 +47,7 @@ describe('clampCropRect', () => {
   })
 
   it('右下角不越界', () => {
-    expect(clampCropRect({ x: 90, y: 90, w: 20, h: 20 }, 100, 100)).toEqual({
+    expect(clampCropRect({x: 90, y: 90, w: 20, h: 20}, 100, 100)).toEqual({
       x: 80,
       y: 80,
       w: 20,
@@ -65,15 +66,33 @@ describe('defaultCropRect', () => {
   })
 })
 
+describe('defaultMosaicRect', () => {
+  it('居中 50% × 50%', () => {
+    const r = defaultMosaicRect(1920, 1080)
+
+    expect(r.w).toBe(960)
+    expect(r.h).toBe(540)
+    expect(r.x).toBe(480)
+    expect(r.y).toBe(270)
+  })
+
+  it('极小画面边长至少 2px', () => {
+    const r = defaultMosaicRect(10, 8)
+
+    expect(r.w).toBeGreaterThanOrEqual(2)
+    expect(r.h).toBeGreaterThanOrEqual(2)
+  })
+})
+
 describe('applyAspectRatio', () => {
   it('约束为 1:1', () => {
-    const r = applyAspectRatio({ x: 0, y: 0, w: 200, h: 100 }, 1, 400, 400)
+    const r = applyAspectRatio({x: 0, y: 0, w: 200, h: 100}, 1, 400, 400)
     expect(r.w).toBe(r.h)
     expect(r.w).toBeGreaterThan(0)
   })
 
   it('16:9 不超出画布', () => {
-    const r = applyAspectRatio({ x: 0, y: 0, w: 1600, h: 900 }, 16 / 9, 800, 600)
+    const r = applyAspectRatio({x: 0, y: 0, w: 1600, h: 900}, 16 / 9, 800, 600)
     expect(r.w).toBeLessThanOrEqual(800)
     expect(r.h).toBeLessThanOrEqual(600)
     expect(Math.abs(r.w / r.h - 16 / 9)).toBeLessThan(0.05)

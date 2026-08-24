@@ -126,10 +126,6 @@ const props = withDefaults(
     composeFitIntroOutro: boolean
     /** 可视化裁切预览路径（任务 inputPath，可空） */
     cropPreviewPath?: string
-    /** 打码模式：是否可编辑打码区域 */
-    mosaicEditable?: boolean
-    /** 当前任务已设置的打码区域数量 */
-    mosaicRegionCount?: number
     /** 多任务全局草稿下裁切/混剪危险提示 */
     showCropComposeWarning?: boolean
     cropComposeWarningText?: string
@@ -147,8 +143,6 @@ const props = withDefaults(
   }>(),
   {
     cropPreviewPath: '',
-    mosaicEditable: false,
-    mosaicRegionCount: 0,
     showCropComposeWarning: false,
     cropComposeWarningText: ''
   }
@@ -218,7 +212,6 @@ const emit = defineEmits<{
   aspectRatioChange: [v: AspectRatioId]
   scalePadChange: [v: ScalePadMode]
   applyToPending: []
-  editMosaics: []
 }>()
 
 /** 高级选项默认折叠 */
@@ -475,12 +468,18 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
   <div class="panel options-panel">
     <div class="options-header">
       <div class="options-header-left">
-        <span class="options-title">任务选项</span>
+        <span class="options-title">{{ isVideoMosaicMode ? '打码选项' : '任务选项' }}</span>
         <span class="options-desc">
           {{ modeDesc() }}
         </span>
       </div>
-      <el-button size="small" @click="emit('applyToPending')">应用到待处理</el-button>
+      <el-button
+        v-if="!isVideoMosaicMode"
+        size="small"
+        @click="emit('applyToPending')"
+      >
+        应用到待处理
+      </el-button>
     </div>
 
     <el-alert
@@ -594,7 +593,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
               class="w-quality"
               @change="(v: number | number[]) => emit('imageQualityChange', Array.isArray(v) ? v[0] : v)"
             />
-            <span class="hint-inline">{{ imageQuality }}</span>
+            <span class="hint-inline hint-inline--tight">{{ imageQuality }}</span>
           </div>
         </el-tooltip>
         <el-tooltip content="0 = 不限制" placement="top" :show-after="400">
@@ -633,7 +632,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
               size="small"
               @change="(v: string | number | boolean) => emit('concatPreferCopyChange', Boolean(v))"
             />
-            <span class="hint-inline">更快，要求编码一致</span>
+            <span class="hint-inline hint-inline--tight">更快，要求编码一致</span>
           </div>
         </el-tooltip>
         <el-tooltip :content="encoderTitle(false, encoderInfo)" placement="top" :show-after="400">
@@ -709,47 +708,14 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
             </span>
           </div>
         </el-tooltip>
-        <span class="hint-inline">重编码时使用</span>
+        <span class="hint-inline hint-inline--tight">重编码时使用</span>
       </template>
 
       <template v-else-if="isVideoMosaicMode">
-        <div class="opt-item">
-          <el-button
-            size="small"
-            type="primary"
-            :disabled="!mosaicEditable"
-            @click="emit('editMosaics')"
-          >
-            编辑打码区域
-          </el-button>
-          <span class="hint-inline">
-            {{
-              mosaicRegionCount > 0
-                ? `已设置 ${mosaicRegionCount} 个区域`
-                : '尚未设置打码区域'
-            }}
-          </span>
-        </div>
-        <span class="hint-inline">默认接近原画导出（CRF 18 · 原分辨率 · MP4）</span>
-        <el-tooltip :content="encoderTitle(false, encoderInfo)" placement="top" :show-after="400">
-          <div class="opt-item">
-            <span class="label">编码器</span>
-            <el-select
-              :model-value="encoder"
-              size="small"
-              class="w-4xl"
-              @change="(v: EncoderId) => emit('encoderChange', v)"
-            >
-              <el-option
-                v-for="opt in ENCODER_OPTIONS"
-                :key="opt.value"
-                :label="encoderOptionLabel(opt)"
-                :value="opt.value"
-                :disabled="!isEncoderOptionAvailable(opt.value)"
-              />
-            </el-select>
-          </div>
-        </el-tooltip>
+        <!-- 编辑打码区域入口保留在 MosaicWorkbench；编码器固定软件，避免硬件探测卡住 -->
+        <span class="hint-inline">
+          接近原画导出（CRF 18 · 原分辨率 · MP4 · 软件编码）
+        </span>
       </template>
 
       <template v-else>
@@ -773,7 +739,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
       <el-tooltip content="原图像素坐标" placement="top" :show-after="400">
         <div class="opt-item">
           <span class="label">裁切区域</span>
-          <span class="hint-inline">X</span>
+          <span class="hint-inline hint-inline--tight">X</span>
           <el-input-number
             :model-value="cropX"
             :min="0"
@@ -784,7 +750,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
             class="w-lg"
             @change="(v: number | undefined) => emit('cropXChange', typeof v === 'number' ? v : 0)"
           />
-          <span class="hint-inline">Y</span>
+          <span class="hint-inline hint-inline--tight">Y</span>
           <el-input-number
             :model-value="cropY"
             :min="0"
@@ -795,7 +761,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
             class="w-lg"
             @change="(v: number | undefined) => emit('cropYChange', typeof v === 'number' ? v : 0)"
           />
-          <span class="hint-inline">宽</span>
+          <span class="hint-inline hint-inline--tight">宽</span>
           <el-input-number
             :model-value="cropW"
             :min="0"
@@ -806,7 +772,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
             class="w-lg"
             @change="(v: number | undefined) => emit('cropWChange', typeof v === 'number' ? v : 0)"
           />
-          <span class="hint-inline">高</span>
+          <span class="hint-inline hint-inline--tight">高</span>
           <el-input-number
             :model-value="cropH"
             :min="0"
@@ -1038,7 +1004,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
           class="w-lg"
           @change="(v: number | undefined) => emit('imageGapChange', typeof v === 'number' ? v : 0)"
         />
-        <span class="hint-inline">px</span>
+        <span class="hint-inline hint-inline--tight">px</span>
       </div>
       <div class="opt-item">
         <span class="label">背景</span>
@@ -1171,7 +1137,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
             <el-tooltip content="0 = 不裁剪 / 到结尾" placement="top" :show-after="400">
               <div class="opt-item">
                 <span class="label">裁剪</span>
-                <span class="hint-inline">开始(秒)</span>
+                <span class="hint-inline hint-inline--tight">开始(秒)</span>
                 <el-input-number
                   :model-value="trimStart"
                   :min="0"
@@ -1183,7 +1149,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                   class="w-lg"
                   @change="(v: number | undefined) => emit('trimStartChange', typeof v === 'number' ? v : 0)"
                 />
-                <span class="hint-inline">结束(秒)</span>
+                <span class="hint-inline hint-inline--tight">结束(秒)</span>
                 <el-input-number
                   :model-value="trimEnd"
                   :min="0"
@@ -1349,7 +1315,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                 class="w-lg"
                 @change="(v: number | undefined) => emit('targetSizeMbChange', typeof v === 'number' ? v : 0)"
               />
-              <span class="hint-inline">MB，0=不限制</span>
+              <span class="hint-inline hint-inline--tight">MB，0=不限制</span>
             </div>
 
             <el-tooltip
@@ -1365,7 +1331,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                   size="small"
                   @change="(v: string | number | boolean) => emit('twoPassChange', Boolean(v))"
                 />
-                <span class="hint-inline">更准更慢</span>
+                <span class="hint-inline hint-inline--tight">更准更慢</span>
               </div>
             </el-tooltip>
 
@@ -1401,7 +1367,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                   :step="2"
                   size="small"
                 />
-                <span class="hint-inline">0 = 不缩放</span>
+                <span class="hint-inline hint-inline--tight">0 = 不缩放</span>
               </div>
               <template v-if="scaleMode === 'fixed'">
                 <div class="opt-item">
@@ -1661,7 +1627,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
             <el-tooltip content="0 = 不裁剪 / 到结尾" placement="top" :show-after="400">
               <div class="opt-item">
                 <span class="label">时间裁剪</span>
-                <span class="hint-inline">开始(秒)</span>
+                <span class="hint-inline hint-inline--tight">开始(秒)</span>
                 <el-input-number
                   :model-value="trimStart"
                   :min="0"
@@ -1673,7 +1639,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                   class="w-lg"
                   @change="(v: number | undefined) => emit('trimStartChange', typeof v === 'number' ? v : 0)"
                 />
-                <span class="hint-inline">结束(秒)</span>
+                <span class="hint-inline hint-inline--tight">结束(秒)</span>
                 <el-input-number
                   :model-value="trimEnd"
                   :min="0"
@@ -1703,7 +1669,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
           </div>
           <div v-show="videoCropOpen" class="opt-row opt-row-wrap">
             <div class="opt-item">
-              <span class="hint-inline">X</span>
+              <span class="hint-inline hint-inline--tight">X</span>
               <el-input-number
                 :model-value="cropX"
                 :min="0"
@@ -1714,7 +1680,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                 class="w-lg"
                 @change="(v: number | undefined) => emit('cropXChange', typeof v === 'number' ? v : 0)"
               />
-              <span class="hint-inline">Y</span>
+              <span class="hint-inline hint-inline--tight">Y</span>
               <el-input-number
                 :model-value="cropY"
                 :min="0"
@@ -1725,7 +1691,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                 class="w-lg"
                 @change="(v: number | undefined) => emit('cropYChange', typeof v === 'number' ? v : 0)"
               />
-              <span class="hint-inline">宽</span>
+              <span class="hint-inline hint-inline--tight">宽</span>
               <el-input-number
                 :model-value="cropW"
                 :min="0"
@@ -1736,7 +1702,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                 class="w-lg"
                 @change="(v: number | undefined) => emit('cropWChange', typeof v === 'number' ? v : 0)"
               />
-              <span class="hint-inline">高</span>
+              <span class="hint-inline hint-inline--tight">高</span>
               <el-input-number
                 :model-value="cropH"
                 :min="0"
@@ -1842,9 +1808,10 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 
 .options-header-left {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 10px;
   min-width: 0;
+  flex: 1;
 }
 
 .options-title {
@@ -1852,19 +1819,23 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
   font-weight: 600;
   color: var(--app-fg);
   white-space: nowrap;
+  /* 与可换行描述顶部对齐 */
+  line-height: 1.4;
+  padding-top: 1px;
 }
 
 .options-desc {
   font-size: var(--fs-sm);
   color: var(--app-fg-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* 窄屏完整显示，允许换行 */
+  white-space: normal;
+  line-height: 1.4;
+  min-width: 0;
 }
 
 .opt-row {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px 14px;
   min-width: 0;
@@ -1880,10 +1851,15 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
   flex-wrap: wrap;
 }
 
+.opt-row-output {
+  flex-wrap: wrap;
+}
+
 .opt-divider {
   width: 1px;
   height: 22px;
   flex-shrink: 0;
+  align-self: center;
   background: color-mix(in srgb, var(--panel-border) 90%, transparent);
 }
 
@@ -1970,6 +1946,11 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
   padding: 10px 0 2px;
 }
 
+.opt-advanced-body .opt-row + .opt-row {
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
 .name-template-input {
   min-width: 140px;
 }
@@ -1984,11 +1965,8 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
   padding-left: 0;
 }
 
-@media (max-width: 1100px) {
-  .opt-row {
-    flex-wrap: wrap;
-  }
-
+/* 分隔线在换行后无意义：中等宽度起隐藏 */
+@media (max-width: 1280px) {
   .opt-divider {
     display: none;
   }
@@ -1996,6 +1974,10 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
   .opt-output,
   .opt-item-fill {
     flex: 1 1 100%;
+  }
+
+  .opt-output .output-path {
+    max-width: none;
   }
 }
 </style>

@@ -28,7 +28,7 @@ import {
 import { isHardwareEncoderFailure, mapFfmpegError } from '../../../shared/errorMap'
 import { getFfmpegPath } from './bin'
 import { detectHardwareEncoders, probeDuration, probeHasAudioStream } from './probe'
-import { getFileSize } from './paths'
+import { getFileSize, pathExistsAsync } from './paths'
 
 export interface RunCompressParams {
   taskId: string
@@ -471,10 +471,14 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
     return { code: 1, error: 'ffmpeg 不可用' }
   }
 
-  if (!fs.existsSync(inputPath)) {
+  // 异步探测：UNC/局域网盘上 existsSync 会挂死主进程
+  if (!(await pathExistsAsync(inputPath))) {
     return {
       code: 1,
-      error: mapFfmpegError(`输入文件不存在: ${inputPath}`, { inputPath, outputPath })
+      error: mapFfmpegError(
+        `无法访问输入文件（超时或不存在）: ${inputPath}`,
+        { inputPath, outputPath }
+      )
     }
   }
 
@@ -486,14 +490,28 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
     }
   }
 
-  // 确保输出目录存在
+  // 确保输出目录存在（输出一般在本地目录）
   const outDir = path.dirname(outputPath)
-  if (!fs.existsSync(outDir)) {
-    fs.mkdirSync(outDir, { recursive: true })
+  try {
+    if (!fs.existsSync(outDir)) {
+      fs.mkdirSync(outDir, { recursive: true })
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return {
+      code: 1,
+      error: mapFfmpegError(`无法创建输出目录: ${msg}`, { inputPath, outputPath })
+    }
   }
 
   const inputSize = getFileSize(inputPath)
-  const sourceDuration = await probeDuration(inputPath)
+  if (signal?.cancelled) {
+    return { code: -1, error: '已取消', inputSize }
+  }
+  const sourceDuration = await probeDuration(inputPath, signal)
+  if (signal?.cancelled) {
+    return { code: -1, error: '已取消', inputSize }
+  }
   // 进度用裁剪后的有效时长
   const duration = effectiveDuration(options, sourceDuration)
   const fontfile =
@@ -541,7 +559,7 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
 
   if (needDetect && !detect) {
     try {
-      detect = await detectHardwareEncoders()
+      detect = await detectHardwareEncoders(false, signal)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       // 探测失败时 auto 可回退软件；指定硬件则报错
@@ -566,6 +584,10 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
         error: msg
       }
     }
+  }
+
+  if (signal?.cancelled) {
+    return { code: -1, error: '已取消', inputSize }
   }
 
   let resolved: ResolvedEncoder

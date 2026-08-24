@@ -9,6 +9,7 @@ import {
   type TaskMode,
   VIDEO_EXTENSIONS
 } from '@shared/types'
+import { cloneForIpc } from '../utils/cloneForIpc'
 
 export interface UseTasksDeps {
   buildOptions: () => CompressOptions
@@ -638,7 +639,8 @@ export function useTasks(deps: UseTasksDeps) {
 
     const err = validateTaskForStart(payload, mode)
     if (err) {
-      ElMessage.warning(err)
+      updateTask(task.id, { error: err })
+      ElMessage.warning({ message: err, duration: 4000, showClose: true })
       return
     }
 
@@ -650,11 +652,33 @@ export function useTasks(deps: UseTasksDeps) {
       error: undefined,
       outputSize: undefined
     })
+    ElMessage.info({ message: '已提交导出…', duration: 1500 })
 
-    const res = await window.electronAPI.startTask(payload)
+    // 局域网盘上若主进程仍被同步 IO 卡住，IPC 会永不返回；超时后提示并允许取消
+    const START_TIMEOUT_MS = 12_000
+    let timedOut = false
+    const res = await Promise.race([
+      window.electronAPI.startTask(cloneForIpc(payload)),
+      new Promise<{ ok: false; error: string }>((resolve) => {
+        setTimeout(() => {
+          timedOut = true
+          resolve({
+            ok: false,
+            error:
+              '启动超时：可能卡在网络盘访问。请取消后把视频复制到本地再试，或检查 NAS 连通性'
+          })
+        }, START_TIMEOUT_MS)
+      })
+    ])
     if (!res.ok) {
-      updateTask(task.id, { status: 'failed', error: res.error })
-      ElMessage.error(res.error || '启动失败')
+      const cur = tasks.value.find((t) => t.id === task.id)
+      // 超时后主进程可能仍会入队；仅当仍停在排队中时标失败
+      if (timedOut && cur && cur.status !== 'queued' && cur.status !== 'pending') {
+        return
+      }
+      const msg = res.error || '启动失败'
+      updateTask(task.id, { status: 'failed', error: msg })
+      ElMessage.error({ message: msg, duration: 8000, showClose: true })
     }
   }
 
@@ -719,7 +743,7 @@ export function useTasks(deps: UseTasksDeps) {
       })
     }
 
-    const res = await window.electronAPI.startTasks(payload)
+    const res = await window.electronAPI.startTasks(cloneForIpc(payload))
     if (!res.ok) {
       ElMessage.error(res.error || '批量启动失败')
     } else {
@@ -732,6 +756,12 @@ export function useTasks(deps: UseTasksDeps) {
   }
 
   async function cancelOne(taskId: string): Promise<void> {
+    // 先本地切到取消态，避免探测卡住时按钮「点了没反应」
+    updateTask(taskId, {
+      status: 'cancelled',
+      error: '已取消',
+      etaSec: undefined
+    })
     await window.electronAPI.cancelTask(taskId)
   }
 
@@ -802,7 +832,7 @@ export function useTasks(deps: UseTasksDeps) {
     saveTimer = setTimeout(() => {
       saveTimer = null
       if (!shouldPersist()) return
-      void window.electronAPI.saveTasks(tasks.value).catch(() => {
+      void window.electronAPI.saveTasks(cloneForIpc(tasks.value)).catch(() => {
         // 静默失败
       })
     }, 400)
@@ -833,7 +863,7 @@ export function useTasks(deps: UseTasksDeps) {
       saveTimer = null
     }
     if (!shouldPersist()) return
-    void window.electronAPI.saveTasks(tasks.value).catch(() => {
+    void window.electronAPI.saveTasks(cloneForIpc(tasks.value)).catch(() => {
       // ignore
     })
   }
@@ -850,6 +880,9 @@ export function useTasks(deps: UseTasksDeps) {
     )
 
     const offProgress = window.electronAPI.onTaskProgress((p) => {
+      const cur = tasks.value.find((t) => t.id === p.taskId)
+      // 本地已取消时忽略迟到进度，避免又跳回运行中
+      if (cur?.status === 'cancelled') return
       updateTask(p.taskId, {
         status: 'running',
         progress: p.percent,
@@ -860,6 +893,8 @@ export function useTasks(deps: UseTasksDeps) {
     })
 
     const offEnd = window.electronAPI.onTaskEnd((p) => {
+      // 主进程已过滤「同 id 被替换」的旧实例终态；这里必须接收 queued/running 上的失败，
+      // 否则会一直停在「排队中」且没有任何提示。
       updateTask(p.taskId, {
         status: p.status,
         progress: p.status === 'completed' ? 100 : undefined,
@@ -872,14 +907,28 @@ export function useTasks(deps: UseTasksDeps) {
         etaSec: p.status === 'completed' ? 0 : undefined
       })
       if (p.status === 'failed') {
-        ElMessage.error(p.error || '任务失败')
+        ElMessage.error({
+          message: p.error || '任务失败',
+          duration: 6000,
+          showClose: true
+        })
       } else if (p.status === 'completed' && p.fallbackNote) {
         // 硬件失败已自动回退软件时给出提示
-        ElMessage.warning(p.fallbackNote)
+        ElMessage.warning({ message: p.fallbackNote, duration: 4000, showClose: true })
       }
     })
 
     const offQueued = window.electronAPI.onTaskQueued((taskId) => {
+      const cur = tasks.value.find((t) => t.id === taskId)
+      // 勿把已 running / 终态盖回「排队中」（IPC 乱序）；同 id 再入队时允许 queued→queued
+      if (
+        cur &&
+        (cur.status === 'running' ||
+          cur.status === 'completed' ||
+          cur.status === 'failed')
+      ) {
+        return
+      }
       updateTask(taskId, { status: 'queued' })
     })
 

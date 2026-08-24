@@ -101,6 +101,19 @@ export function defaultCropRect(natW: number, natH: number): CropRect {
 }
 
 /**
+ * 默认打码框：画面正中约 50% × 50%；边长至少 2px（打码滤镜下限）
+ */
+export function defaultMosaicRect(natW: number, natH: number): CropRect {
+  const maxW = Math.max(1, Math.floor(natW))
+  const maxH = Math.max(1, Math.floor(natH))
+  const w = Math.max(2, Math.min(maxW, Math.round(maxW * 0.5)))
+  const h = Math.max(2, Math.min(maxH, Math.round(maxH * 0.5)))
+  const x = Math.max(0, Math.round((maxW - w) / 2))
+  const y = Math.max(0, Math.round((maxH - h) / 2))
+  return clampCropRect({ x, y, w, h }, maxW, maxH)
+}
+
+/**
  * 按宽高比约束矩形（以当前中心为锚，尽量贴近目标 w/h）
  * aspectRatio = w/h，如 16/9
  */

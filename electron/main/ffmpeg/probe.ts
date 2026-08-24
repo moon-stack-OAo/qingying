@@ -97,17 +97,44 @@ function buildAvailability(
   })
 }
 
+/** 任务取消信号（与队列共用） */
+export type DetectCancelSignal = { cancelled: boolean }
+
+function killProcTree(proc: ChildProcess): void {
+  try {
+    proc.kill('SIGTERM')
+    if (process.platform === 'win32' && proc.pid) {
+      spawn('taskkill', ['/pid', String(proc.pid), '/f', '/t'], {
+        windowsHide: true,
+        stdio: 'ignore'
+      })
+    }
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * 用极短 lavfi 黑帧试编，验证硬件编码器是否真正可用
- * 失败/超时则返回 false
+ * 失败/超时/取消则返回 false
  */
-function trialEncode(ffmpeg: string, codec: string): Promise<boolean> {
+function trialEncode(
+  ffmpeg: string,
+  codec: string,
+  signal?: DetectCancelSignal | null
+): Promise<boolean> {
   return new Promise((resolve) => {
+    if (signal?.cancelled) {
+      resolve(false)
+      return
+    }
+
     let settled = false
     const finish = (ok: boolean): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      clearInterval(cancelPoll)
       resolve(ok)
     }
 
@@ -149,18 +176,15 @@ function trialEncode(ffmpeg: string, codec: string): Promise<boolean> {
       return
     }
 
-    const timer = setTimeout(() => {
-      try {
-        proc.kill('SIGTERM')
-        if (process.platform === 'win32' && proc.pid) {
-          spawn('taskkill', ['/pid', String(proc.pid), '/f', '/t'], {
-            windowsHide: true,
-            stdio: 'ignore'
-          })
-        }
-      } catch {
-        // ignore
+    const cancelPoll = setInterval(() => {
+      if (signal?.cancelled) {
+        killProcTree(proc)
+        finish(false)
       }
+    }, 200)
+
+    const timer = setTimeout(() => {
+      killProcTree(proc)
       finish(false)
     }, timeoutMs)
 
@@ -176,13 +200,20 @@ function trialEncode(ffmpeg: string, codec: string): Promise<boolean> {
  * 1) ffmpeg -encoders 列表匹配
  * 2) 对列表中为 true 的硬件做可选试编，失败则标 false
  * libx264/libx265 仅列表存在即 available
+ * @param force 忽略缓存强制重测
+ * @param signal 可选取消信号；取消时尽快结束且不写入缓存
  */
 export async function detectHardwareEncoders(
-  force = false
+  force = false,
+  signal?: DetectCancelSignal | null
 ): Promise<EncoderDetectResult> {
   const now = Date.now()
   if (!force && encoderCache && now - encoderCacheAt < ENCODER_CACHE_MS) {
     return encoderCache
+  }
+
+  if (signal?.cancelled) {
+    return emptyDetect('已取消')
   }
 
   const ffmpeg = getFfmpegPath()
@@ -195,12 +226,35 @@ export async function detectHardwareEncoders(
     codecs: Partial<Record<ResolvedEncoder, boolean>>
     error?: string
   }>((resolve) => {
+    if (signal?.cancelled) {
+      resolve({ codecs: {}, error: '已取消' })
+      return
+    }
+
     const proc = spawn(ffmpeg, ['-hide_banner', '-encoders'], {
       windowsHide: true
     })
 
     let out = ''
     let err = ''
+    let settled = false
+    const finish = (v: {
+      codecs: Partial<Record<ResolvedEncoder, boolean>>
+      error?: string
+    }): void => {
+      if (settled) return
+      settled = true
+      clearInterval(cancelPoll)
+      resolve(v)
+    }
+
+    const cancelPoll = setInterval(() => {
+      if (signal?.cancelled) {
+        killProcTree(proc)
+        finish({ codecs: {}, error: '已取消' })
+      }
+    }, 200)
+
     proc.stdout?.on('data', (d: Buffer) => {
       out += d.toString()
     })
@@ -209,7 +263,7 @@ export async function detectHardwareEncoders(
     })
 
     proc.on('error', (e) => {
-      resolve({ codecs: {}, error: e.message })
+      finish({ codecs: {}, error: e.message })
     })
 
     proc.on('close', () => {
@@ -224,9 +278,13 @@ export async function detectHardwareEncoders(
       }
       // libx264 几乎总有；若列表解析异常也视为可用（软件回退）
       if (codecs.libx264 !== true) codecs.libx264 = true
-      resolve({ codecs })
+      finish({ codecs })
     })
   })
+
+  if (signal?.cancelled || listResult.error === '已取消') {
+    return emptyDetect('已取消')
+  }
 
   if (listResult.error) {
     const result = emptyDetect(listResult.error)
@@ -243,7 +301,13 @@ export async function detectHardwareEncoders(
   // —— 对列表中存在的硬件做试编验证 ——
   const toTrial = HW_TRIAL_CODECS.filter((c) => codecs[c])
   for (const codec of toTrial) {
-    const ok = await trialEncode(ffmpeg, codec)
+    if (signal?.cancelled) {
+      return emptyDetect('已取消')
+    }
+    const ok = await trialEncode(ffmpeg, codec, signal)
+    if (signal?.cancelled) {
+      return emptyDetect('已取消')
+    }
     codecs[codec] = ok
     verified[codec] = ok
   }
@@ -322,6 +386,10 @@ export function probeVideoSize(
     proc.on('error', () => resolve(null))
     proc.on('close', () => {
       try {
+        if (!out.trim()) {
+          resolve(null)
+          return
+        }
         const parsed = JSON.parse(out) as {
           streams?: Array<{
             width?: number
@@ -366,13 +434,32 @@ export function probeVideoSize(
   })
 }
 
-/** 探测媒体时长（秒） */
-export function probeDuration(inputPath: string): Promise<number> {
+const PROBE_DURATION_TIMEOUT_MS = 15_000
+
+/** 探测媒体时长（秒）；失败 / 超时 / 取消返回 0 */
+export function probeDuration(
+  inputPath: string,
+  signal?: DetectCancelSignal | null
+): Promise<number> {
   return new Promise((resolve) => {
+    if (signal?.cancelled) {
+      resolve(0)
+      return
+    }
+
     const ffprobe = getFfprobePath()
     if (!ffprobe) {
       resolve(0)
       return
+    }
+
+    let settled = false
+    const finish = (n: number): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      clearInterval(cancelPoll)
+      resolve(n)
     }
 
     const proc = spawn(
@@ -389,14 +476,26 @@ export function probeDuration(inputPath: string): Promise<number> {
       { windowsHide: true }
     )
 
+    const cancelPoll = setInterval(() => {
+      if (signal?.cancelled) {
+        killProcTree(proc)
+        finish(0)
+      }
+    }, 200)
+
+    const timer = setTimeout(() => {
+      killProcTree(proc)
+      finish(0)
+    }, PROBE_DURATION_TIMEOUT_MS)
+
     let out = ''
     proc.stdout?.on('data', (d: Buffer) => {
       out += d.toString()
     })
-    proc.on('error', () => resolve(0))
+    proc.on('error', () => finish(0))
     proc.on('close', () => {
       const n = parseFloat(out.trim())
-      resolve(Number.isFinite(n) && n > 0 ? n : 0)
+      finish(Number.isFinite(n) && n > 0 ? n : 0)
     })
   })
 }

@@ -444,9 +444,16 @@ export async function runVideoConcat(
 
   let detect = null
   try {
-    detect = await detectHardwareEncoders()
+    detect = await detectHardwareEncoders(false, signal)
   } catch {
     detect = null
+  }
+  if (signal?.cancelled) {
+    return {
+      code: -1,
+      error: '已取消',
+      inputSize: inputSize || undefined
+    }
   }
 
   let resolved: ResolvedEncoder = 'libx264'
