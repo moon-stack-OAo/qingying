@@ -137,7 +137,7 @@ export function useTasks(deps: UseTasksDeps) {
   }
 
   /**
-   * 合并启动用 options：安全字段取当前草稿，crop/compose（含 image.crop）优先任务级。
+   * 合并启动用 options：安全字段取当前草稿，crop/compose/mosaics（含 image.crop）优先任务级。
    * 任务无 crop/compose 时回退草稿，保证单任务未选中时全局裁切仍可生效。
    */
   function optionsForStart(task: CompressTask): CompressOptions {
@@ -164,6 +164,13 @@ export function useTasks(deps: UseTasksDeps) {
       delete next.compose
     }
 
+    // mosaics 为任务级，显式保留，防止被草稿冲掉
+    if (prev?.mosaics?.length) {
+      next.mosaics = prev.mosaics
+    } else {
+      delete next.mosaics
+    }
+
     if (draft.image || prev?.image) {
       // 安全字段以草稿为准，crop 优先任务级
       const merged: NonNullable<CompressOptions['image']> = {
@@ -186,7 +193,7 @@ export function useTasks(deps: UseTasksDeps) {
 
   /**
    * 将当前选项写回所有待处理 / 失败任务。
-   * 默认不同步 crop / image.crop / compose（任务级字段），除非 includeCropCompose。
+   * 默认不同步 crop / image.crop / compose / mosaics（任务级字段），除非 includeCropCompose。
    */
   function syncPendingOptions(opts?: { includeCropCompose?: boolean }): void {
     const includeCropCompose = opts?.includeCropCompose === true
@@ -194,7 +201,15 @@ export function useTasks(deps: UseTasksDeps) {
     tasks.value = tasks.value.map((t) => {
       if (t.status !== 'pending' && t.status !== 'failed') return t
       if (includeCropCompose) {
-        return { ...t, options: { ...draft }, outputPath: '' }
+        const prev = t.options || ({} as CompressOptions)
+        const next: CompressOptions = { ...draft }
+        // 「应用到待处理」仍保留各任务打码区域（打码模式单任务为主）
+        if (prev.mosaics?.length) {
+          next.mosaics = prev.mosaics
+        } else {
+          delete next.mosaics
+        }
+        return { ...t, options: next, outputPath: '' }
       }
       const prev = t.options || ({} as CompressOptions)
       const next: CompressOptions = { ...draft }
@@ -227,6 +242,13 @@ export function useTasks(deps: UseTasksDeps) {
         next.compose = prev.compose
       } else {
         delete next.compose
+      }
+
+      // mosaics 保留任务级
+      if (prev.mosaics?.length) {
+        next.mosaics = prev.mosaics
+      } else {
+        delete next.mosaics
       }
 
       return { ...t, options: next, outputPath: '' }
@@ -304,6 +326,39 @@ export function useTasks(deps: UseTasksDeps) {
       return isAllowedMedia(f.name || f.path, mode)
     })
     const invalidCount = files.length - valid.length
+
+    // 视频打码：仅支持单个视频
+    if (mode === 'video-mosaic') {
+      if (valid.length === 0) {
+        if (invalidCount > 0) {
+          ElMessage.warning(invalidMediaMessage(mode))
+        }
+        return
+      }
+      if (tasks.value.length > 0) {
+        ElMessage.warning('打码模式仅支持单个视频，请先清除当前任务')
+        return
+      }
+      if (files.length > 1 || valid.length > 1) {
+        ElMessage.info('打码模式仅支持单个视频，已取第一个文件')
+      }
+      const f = valid[0]
+      const taskOptions = deps.buildOptions()
+      const task: CompressTask = {
+        id: genId(),
+        inputPath: f.path,
+        fileName: f.name,
+        outputPath: '',
+        status: 'pending',
+        progress: 0,
+        options: taskOptions
+      }
+      tasks.value.push(task)
+      selectedTaskId.value = task.id
+      lastDropOkAt.value = Date.now()
+      ElMessage.success('已添加 1 个文件')
+      return
+    }
 
     // 拼接模式：一次多选 → 一个任务
     if (
@@ -549,6 +604,12 @@ export function useTasks(deps: UseTasksDeps) {
         typeof c?.overlay?.imagePath === 'string' && c.overlay.imagePath.trim()
       if (!hasIntro && !hasOutro && !hasOverlay) {
         return '请设置片头、片尾或叠加图'
+      }
+    }
+    if (mode === 'video-mosaic') {
+      const regions = task.options?.mosaics
+      if (!Array.isArray(regions) || regions.length < 1) {
+        return '请先编辑并设置至少一个打码区域'
       }
     }
     return null

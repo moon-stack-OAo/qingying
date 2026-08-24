@@ -54,12 +54,37 @@ jobs:
           echo "----- release-notes.md (preview) -----"
           head -n 40 release-notes.md || true
 
+      # 签名 Secrets 未配置时勿把空 CSC_LINK 传给 electron-builder（空串会被当成路径 → "not a file"）
+      # 仅当 Secrets 有值时写入 GITHUB_ENV；否则保持未设置 + AUTO_DISCOVERY=false，跳过签名且不失败
+      # 启用步骤见 docs/RELEASE.md「启用签名检查清单」
+      - name: Configure Windows code signing (optional)
+        shell: bash
+        env:
+          CSC_LINK_RAW: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD_RAW: ${{ secrets.CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK_RAW: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD_RAW: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # 优先 WIN_*（跨平台双证书场景），否则用通用 CSC_*
+          LINK="${WIN_CSC_LINK_RAW:-${CSC_LINK_RAW:-}}"
+          PASS="${WIN_CSC_KEY_PASSWORD_RAW:-${CSC_KEY_PASSWORD_RAW:-}}"
+          if [ -n "$LINK" ]; then
+            {
+              echo "WIN_CSC_LINK=$LINK"
+              echo "CSC_LINK=$LINK"
+              [ -n "$PASS" ] && echo "WIN_CSC_KEY_PASSWORD=$PASS"
+              [ -n "$PASS" ] && echo "CSC_KEY_PASSWORD=$PASS"
+            } >> "$GITHUB_ENV"
+            echo "Windows signing secrets present — will attempt code signing."
+          else
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "Windows signing secrets not configured — building unsigned."
+          fi
+
       - name: Build & package (Windows)
         run: npm run dist:win
         env:
-          # 未配置代码签名时跳过签名
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-          # 供 electron-builder 发布元数据（latest.yml）写入 release 目录
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Attach notes next to build artifacts
@@ -92,7 +117,10 @@ jobs:
     name: Build macOS
     runs-on: macos-latest
     timeout-minutes: 60
-    # 未配置 Apple 签名/公证时仍可产出未签名 dmg/zip（CSC_IDENTITY_AUTO_DISCOVERY=false）
+    # macOS 打包默认开启（无证书时产出未签名 dmg/zip）。
+    # 签名/公证：按 docs/RELEASE.md「启用签名检查清单 → macOS」配置 Secrets，
+    # 并取消 electron-builder.yml 中 hardenedRuntime / entitlements 等注释后再正式启用。
+    # 若需暂时关闭本 job，可加：if: false
 
     steps:
       - name: Checkout
@@ -125,10 +153,36 @@ jobs:
       - name: Extract changelog for release notes
         run: node scripts/extract-changelog.mjs "${{ steps.ver.outputs.version }}" release-notes.md
 
+      # 空 CSC_LINK 会导致 "not a file"；仅非空时导出。无证书时 AUTO_DISCOVERY=false 跳过签名
+      - name: Configure macOS code signing / notarization (optional)
+        shell: bash
+        env:
+          CSC_LINK_RAW: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD_RAW: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_NAME_RAW: ${{ secrets.CSC_NAME }}
+          APPLE_ID_RAW: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD_RAW: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID_RAW: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "${CSC_LINK_RAW:-}" ]; then
+            {
+              echo "CSC_LINK=$CSC_LINK_RAW"
+              [ -n "${CSC_KEY_PASSWORD_RAW:-}" ] && echo "CSC_KEY_PASSWORD=$CSC_KEY_PASSWORD_RAW"
+              [ -n "${CSC_NAME_RAW:-}" ] && echo "CSC_NAME=$CSC_NAME_RAW"
+              [ -n "${APPLE_ID_RAW:-}" ] && echo "APPLE_ID=$APPLE_ID_RAW"
+              [ -n "${APPLE_APP_SPECIFIC_PASSWORD_RAW:-}" ] && echo "APPLE_APP_SPECIFIC_PASSWORD=$APPLE_APP_SPECIFIC_PASSWORD_RAW"
+              [ -n "${APPLE_TEAM_ID_RAW:-}" ] && echo "APPLE_TEAM_ID=$APPLE_TEAM_ID_RAW"
+            } >> "$GITHUB_ENV"
+            echo "macOS signing secrets present — will attempt sign (+ notarize if Apple* set)."
+          else
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "macOS signing secrets not configured — building unsigned."
+          fi
+
       - name: Build & package (macOS)
         run: npm run dist:mac
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Attach notes next to build artifacts

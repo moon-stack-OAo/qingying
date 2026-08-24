@@ -100,7 +100,7 @@ npm run dist:mac
 
 - 需在 macOS 上执行 `npm run dist:mac` 并实测路径与签名
 - **VideoToolbox** 已接入：auto 在 darwin 优先 `h264_videotoolbox`（需本机探测/试编成功）
-- GitHub Actions 中 macOS 打包 job 默认关闭，配置签名与公证后再开启
+- GitHub Actions 中 macOS 打包 job 默认开启（无证书时未签名）；签名/公证按 [docs/RELEASE.md](./docs/RELEASE.md) 启用
 
 #### 未签名构建（当前）
 
@@ -139,10 +139,10 @@ qingying/
 
 ## 持续集成与发版
 
-| 工作流       | 触发条件                          | 作用                                  |
-|-----------|-------------------------------|-------------------------------------|
-| `CI`      | push / PR 到 `main` 或 `master` | `npm ci` → typecheck → test → build |
-| `Release` | 推送 tag `v*`（如 `v1.0.0`）       | Windows 打包并上传 GitHub Release        |
+| 工作流       | 触发条件                          | 作用                                     |
+|-----------|-------------------------------|----------------------------------------|
+| `CI`      | push / PR 到 `main` 或 `master` | `npm ci` → typecheck → test → build    |
+| `Release` | 推送 tag `v*`（如 `v1.0.0`）       | Windows + macOS 打包并上传同一 GitHub Release |
 
 详细发版步骤见 [docs/RELEASE.md](./docs/RELEASE.md)。
 
@@ -155,24 +155,26 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-> macOS 打包 job 默认关闭（`if: false`），需在 mac 上实测或配置签名后再开启。  
+> macOS 无证书时产出未签名包；需暂时关闭 job 时可在 workflow 加 `if: false`。详见 [docs/RELEASE.md](./docs/RELEASE.md)。  
 > 更新日志见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 代码签名
 
+> **当前无真实证书时不会实际签名。** 文档与 Release CI 已预留接线；证书就绪后按 [docs/RELEASE.md](./docs/RELEASE.md)
+> 「启用签名检查清单」开启。
+
 ### Windows
 
-- 未配置代码签名时，安装/启动可能触发 **SmartScreen**「未知发布者」提示，自动更新仍可工作但体验较差
-- 使用 electron-builder 时，可在 CI 或本机配置（勿将证书与密码提交到仓库）：
-    - `CSC_LINK`：证书文件路径或 base64
-    - `CSC_KEY_PASSWORD`：证书密码
-- 详见 [docs/RELEASE.md](./docs/RELEASE.md)
+- 未配置时可能触发 **SmartScreen**「未知发布者」；自动更新仍可用
+- 环境变量（勿提交仓库）：`CSC_LINK` / `WIN_CSC_LINK`、`CSC_KEY_PASSWORD` / `WIN_CSC_KEY_PASSWORD`；可选 `CSC_NAME`
+- CI：Secrets 未配置时跳过签名且不失败；配置后自动注入并尝试签名
 
 ### macOS
 
-- 正式分发需 Apple 开发者证书与公证（Notarization）
-- 常见环境变量：`CSC_LINK` / `CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` 等
-- 当前 Release 工作流以 Windows 为主，macOS 完整签名与公证链路尚未接入
+- 正式分发需 Developer ID + 公证：`CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`
+  等
+- `electron-builder.yml` 中 `hardenedRuntime` / `entitlements` 仍为注释；启用前取消注释（模板：
+  `build/entitlements.mac.plist`）
 - **未签名包使用说明**见上文「构建与打包 → macOS 说明 → 未签名构建」
 
 ## 自动更新
@@ -241,16 +243,16 @@ git push origin v1.0.0
 
 ## 技术说明
 
-| 项     | 说明                                                 |
-|-------|----------------------------------------------------|
-| 脚手架   | electron-vite                                      |
-| UI    | Element Plus（中文）                                   |
-| 安全    | `contextIsolation: true`，`nodeIntegration: false`  |
-| 拖拽路径  | preload `webUtils.getPathForFile`                  |
-| 并行队列  | `taskQueue` 支持 concurrency，进度按 taskId 推送           |
-| 进度    | ffmpeg `-progress pipe:1` + stderr 兜底解析            |
-| 测试    | vitest（`npm test`）                                 |
-| 打包二进制 | `asarUnpack` 解包 `ffmpeg-static` / `ffprobe-static` |
+| 项     | 说明                                                                |
+|-------|-------------------------------------------------------------------|
+| 脚手架   | electron-vite                                                     |
+| UI    | Element Plus（中文）                                                  |
+| 安全    | `contextIsolation: true`，`nodeIntegration: false`，`sandbox: true` |
+| 拖拽路径  | preload `webUtils.getPathForFile`                                 |
+| 并行队列  | `taskQueue` 支持 concurrency，进度按 taskId 推送                          |
+| 进度    | ffmpeg `-progress pipe:1` + stderr 兜底解析                           |
+| 测试    | vitest（`npm test`）                                                |
+| 打包二进制 | `asarUnpack` 解包 `ffmpeg-static` / `ffprobe-static`                |
 
 ## 已知限制
 

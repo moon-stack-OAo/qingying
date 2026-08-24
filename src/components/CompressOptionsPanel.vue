@@ -71,6 +71,7 @@ const props = withDefaults(
     isImageMode: boolean
     isVideoConcatMode: boolean
     isMediaComposeMode: boolean
+    isVideoMosaicMode: boolean
     isVideoCompressMode: boolean
     presetDescription: string
     encoderInfo: EncoderDetectResult | null
@@ -125,8 +126,10 @@ const props = withDefaults(
     composeFitIntroOutro: boolean
     /** 可视化裁切预览路径（任务 inputPath，可空） */
     cropPreviewPath?: string
-    /** 是否存在可单独编辑的压缩任务 */
+    /** 打码模式：是否可编辑打码区域 */
     mosaicEditable?: boolean
+    /** 当前任务已设置的打码区域数量 */
+    mosaicRegionCount?: number
     /** 多任务全局草稿下裁切/混剪危险提示 */
     showCropComposeWarning?: boolean
     cropComposeWarningText?: string
@@ -145,6 +148,7 @@ const props = withDefaults(
   {
     cropPreviewPath: '',
     mosaicEditable: false,
+    mosaicRegionCount: 0,
     showCropComposeWarning: false,
     cropComposeWarningText: ''
   }
@@ -393,6 +397,8 @@ function modeDesc(): string {
   if (props.taskMode === 'image-stitch') return '多图拼接为一张'
   if (props.taskMode === 'video-concat') return '多段视频首尾拼接'
   if (props.taskMode === 'media-compose') return '片头/片尾静图 + 图叠主视频'
+  if (props.taskMode === 'video-mosaic')
+    return '仅支持单个视频，框选区域后接近原画导出'
   return props.presetDescription
 }
 
@@ -576,120 +582,174 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
             />
           </el-select>
         </div>
-        <div class="opt-item" title="JPEG / WebP 有效">
-          <span class="label">质量</span>
-          <el-slider
-            :model-value="imageQuality"
-            :min="1"
-            :max="100"
-            :step="1"
-            size="small"
-            class="w-quality"
-            @change="(v: number | number[]) => emit('imageQualityChange', Array.isArray(v) ? v[0] : v)"
-          />
-          <span class="hint-inline">{{ imageQuality }}</span>
-        </div>
-        <div class="opt-item" title="0 = 不限制">
-          <span class="label">最长边</span>
-          <el-input-number
-            :model-value="imageMaxEdge"
-            :min="0"
-            :max="7680"
-            :step="10"
-            size="small"
-            controls-position="right"
-            class="w-lg"
-            @change="(v: number | undefined) => emit('imageMaxEdgeChange', typeof v === 'number' ? v : 0)"
-          />
-        </div>
-        <div class="opt-item" title="去掉 EXIF 等元数据">
-          <span class="label">去元数据</span>
-          <el-switch
-            :model-value="imageStrip"
-            size="small"
-            @change="(v: string | number | boolean) => emit('imageStripChange', Boolean(v))"
-          />
-        </div>
+        <el-tooltip content="JPEG / WebP 有效" placement="top" :show-after="400">
+          <div class="opt-item">
+            <span class="label">质量</span>
+            <el-slider
+              :model-value="imageQuality"
+              :min="1"
+              :max="100"
+              :step="1"
+              size="small"
+              class="w-quality"
+              @change="(v: number | number[]) => emit('imageQualityChange', Array.isArray(v) ? v[0] : v)"
+            />
+            <span class="hint-inline">{{ imageQuality }}</span>
+          </div>
+        </el-tooltip>
+        <el-tooltip content="0 = 不限制" placement="top" :show-after="400">
+          <div class="opt-item">
+            <span class="label">最长边</span>
+            <el-input-number
+              :model-value="imageMaxEdge"
+              :min="0"
+              :max="7680"
+              :step="10"
+              size="small"
+              controls-position="right"
+              class="w-lg"
+              @change="(v: number | undefined) => emit('imageMaxEdgeChange', typeof v === 'number' ? v : 0)"
+            />
+          </div>
+        </el-tooltip>
+        <el-tooltip content="去掉 EXIF 等元数据" placement="top" :show-after="400">
+          <div class="opt-item">
+            <span class="label">去元数据</span>
+            <el-switch
+              :model-value="imageStrip"
+              size="small"
+              @change="(v: string | number | boolean) => emit('imageStripChange', Boolean(v))"
+            />
+          </div>
+        </el-tooltip>
       </template>
 
       <template v-else-if="isVideoConcatMode">
-        <div class="opt-item" title="编码参数一致时可流复制，更快">
-          <span class="label">优先流复制</span>
-          <el-switch
-            :model-value="concatPreferCopy"
-            size="small"
-            @change="(v: string | number | boolean) => emit('concatPreferCopyChange', Boolean(v))"
-          />
-          <span class="hint-inline">更快，要求编码一致</span>
-        </div>
-        <div class="opt-item" :title="encoderTitle(false, encoderInfo)">
-          <span class="label">编码器</span>
-          <el-select
-            :model-value="encoder"
-            size="small"
-            class="w-4xl"
-            @change="(v: EncoderId) => emit('encoderChange', v)"
-          >
-            <el-option
-              v-for="opt in ENCODER_OPTIONS"
-              :key="opt.value"
-              :label="encoderOptionLabel(opt)"
-              :value="opt.value"
-              :disabled="!isEncoderOptionAvailable(opt.value)"
+        <el-tooltip content="编码参数一致时可流复制，更快" placement="top" :show-after="400">
+          <div class="opt-item">
+            <span class="label">优先流复制</span>
+            <el-switch
+              :model-value="concatPreferCopy"
+              size="small"
+              @change="(v: string | number | boolean) => emit('concatPreferCopyChange', Boolean(v))"
             />
-          </el-select>
-          <span v-if="encoderChips.length" class="encoder-chips">
-            <span
-              v-for="c in encoderChips"
-              :key="c.key"
-              class="encoder-chip"
-              :class="{ ok: c.ok, bad: !c.ok }"
+            <span class="hint-inline">更快，要求编码一致</span>
+          </div>
+        </el-tooltip>
+        <el-tooltip :content="encoderTitle(false, encoderInfo)" placement="top" :show-after="400">
+          <div class="opt-item">
+            <span class="label">编码器</span>
+            <el-select
+              :model-value="encoder"
+              size="small"
+              class="w-4xl"
+              @change="(v: EncoderId) => emit('encoderChange', v)"
             >
-              {{ c.label }}{{ c.ok ? '✓' : '–' }}
+              <el-option
+                v-for="opt in ENCODER_OPTIONS"
+                :key="opt.value"
+                :label="encoderOptionLabel(opt)"
+                :value="opt.value"
+                :disabled="!isEncoderOptionAvailable(opt.value)"
+              />
+            </el-select>
+            <span v-if="encoderChips.length" class="encoder-chips">
+              <span
+                v-for="c in encoderChips"
+                :key="c.key"
+                class="encoder-chip"
+                :class="{ ok: c.ok, bad: !c.ok }"
+              >
+                {{ c.label }}{{ c.ok ? '✓' : '–' }}
+              </span>
             </span>
-          </span>
-        </div>
+          </div>
+        </el-tooltip>
         <span class="hint-inline">流复制失败时将按此编码器重编码</span>
       </template>
 
       <template v-else-if="isMediaComposeMode">
-        <div class="opt-item" title="片头尾静图缩放到主视频尺寸并黑边填充">
-          <span class="label">匹配主视频尺寸</span>
-          <el-switch
-            :model-value="composeFitIntroOutro"
-            size="small"
-            @change="(v: string | number | boolean) => emit('composeFitIntroOutroChange', Boolean(v))"
-          />
-          <span class="hint-inline">主视频从任务列表添加；图片在此选择</span>
-        </div>
-        <div class="opt-item" :title="encoderTitle(false, encoderInfo)">
-          <span class="label">编码器</span>
-          <el-select
-            :model-value="encoder"
-            size="small"
-            class="w-4xl"
-            @change="(v: EncoderId) => emit('encoderChange', v)"
-          >
-            <el-option
-              v-for="opt in ENCODER_OPTIONS"
-              :key="opt.value"
-              :label="encoderOptionLabel(opt)"
-              :value="opt.value"
-              :disabled="!isEncoderOptionAvailable(opt.value)"
+        <el-tooltip content="片头尾静图缩放到主视频尺寸并黑边填充" placement="top" :show-after="400">
+          <div class="opt-item">
+            <span class="label">匹配主视频尺寸</span>
+            <el-switch
+              :model-value="composeFitIntroOutro"
+              size="small"
+              @change="(v: string | number | boolean) => emit('composeFitIntroOutroChange', Boolean(v))"
             />
-          </el-select>
-          <span v-if="encoderChips.length" class="encoder-chips">
-            <span
-              v-for="c in encoderChips"
-              :key="c.key"
-              class="encoder-chip"
-              :class="{ ok: c.ok, bad: !c.ok }"
+            <span class="hint-inline">主视频从任务列表添加；图片在此选择</span>
+          </div>
+        </el-tooltip>
+        <el-tooltip :content="encoderTitle(false, encoderInfo)" placement="top" :show-after="400">
+          <div class="opt-item">
+            <span class="label">编码器</span>
+            <el-select
+              :model-value="encoder"
+              size="small"
+              class="w-4xl"
+              @change="(v: EncoderId) => emit('encoderChange', v)"
             >
-              {{ c.label }}{{ c.ok ? '✓' : '–' }}
+              <el-option
+                v-for="opt in ENCODER_OPTIONS"
+                :key="opt.value"
+                :label="encoderOptionLabel(opt)"
+                :value="opt.value"
+                :disabled="!isEncoderOptionAvailable(opt.value)"
+              />
+            </el-select>
+            <span v-if="encoderChips.length" class="encoder-chips">
+              <span
+                v-for="c in encoderChips"
+                :key="c.key"
+                class="encoder-chip"
+                :class="{ ok: c.ok, bad: !c.ok }"
+              >
+                {{ c.label }}{{ c.ok ? '✓' : '–' }}
+              </span>
             </span>
+          </div>
+        </el-tooltip>
+        <span class="hint-inline">重编码时使用</span>
+      </template>
+
+      <template v-else-if="isVideoMosaicMode">
+        <div class="opt-item">
+          <el-button
+            size="small"
+            type="primary"
+            :disabled="!mosaicEditable"
+            @click="emit('editMosaics')"
+          >
+            编辑打码区域
+          </el-button>
+          <span class="hint-inline">
+            {{
+              mosaicRegionCount > 0
+                ? `已设置 ${mosaicRegionCount} 个区域`
+                : '尚未设置打码区域'
+            }}
           </span>
         </div>
-        <span class="hint-inline">重编码时使用</span>
+        <span class="hint-inline">默认接近原画导出（CRF 18 · 原分辨率 · MP4）</span>
+        <el-tooltip :content="encoderTitle(false, encoderInfo)" placement="top" :show-after="400">
+          <div class="opt-item">
+            <span class="label">编码器</span>
+            <el-select
+              :model-value="encoder"
+              size="small"
+              class="w-4xl"
+              @change="(v: EncoderId) => emit('encoderChange', v)"
+            >
+              <el-option
+                v-for="opt in ENCODER_OPTIONS"
+                :key="opt.value"
+                :label="encoderOptionLabel(opt)"
+                :value="opt.value"
+                :disabled="!isEncoderOptionAvailable(opt.value)"
+              />
+            </el-select>
+          </div>
+        </el-tooltip>
       </template>
 
       <template v-else>
@@ -710,57 +770,59 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 
     <!-- 图片裁切 / 拼接额外选项 -->
     <div v-if="taskMode === 'image-crop'" class="opt-row opt-row-wrap">
-      <div class="opt-item" title="原图像素坐标">
-        <span class="label">裁切区域</span>
-        <span class="hint-inline">X</span>
-        <el-input-number
-          :model-value="cropX"
-          :min="0"
-          :max="20000"
-          :step="1"
-          size="small"
-          controls-position="right"
-          class="w-lg"
-          @change="(v: number | undefined) => emit('cropXChange', typeof v === 'number' ? v : 0)"
-        />
-        <span class="hint-inline">Y</span>
-        <el-input-number
-          :model-value="cropY"
-          :min="0"
-          :max="20000"
-          :step="1"
-          size="small"
-          controls-position="right"
-          class="w-lg"
-          @change="(v: number | undefined) => emit('cropYChange', typeof v === 'number' ? v : 0)"
-        />
-        <span class="hint-inline">宽</span>
-        <el-input-number
-          :model-value="cropW"
-          :min="0"
-          :max="20000"
-          :step="1"
-          size="small"
-          controls-position="right"
-          class="w-lg"
-          @change="(v: number | undefined) => emit('cropWChange', typeof v === 'number' ? v : 0)"
-        />
-        <span class="hint-inline">高</span>
-        <el-input-number
-          :model-value="cropH"
-          :min="0"
-          :max="20000"
-          :step="1"
-          size="small"
-          controls-position="right"
-          class="w-lg"
-          @change="(v: number | undefined) => emit('cropHChange', typeof v === 'number' ? v : 0)"
-        />
-        <el-button size="small" type="primary" plain @click="openVisualCrop">
-          可视化裁切
-        </el-button>
-        <span class="hint-inline">原图像素，宽高须 &gt; 0</span>
-      </div>
+      <el-tooltip content="原图像素坐标" placement="top" :show-after="400">
+        <div class="opt-item">
+          <span class="label">裁切区域</span>
+          <span class="hint-inline">X</span>
+          <el-input-number
+            :model-value="cropX"
+            :min="0"
+            :max="20000"
+            :step="1"
+            size="small"
+            controls-position="right"
+            class="w-lg"
+            @change="(v: number | undefined) => emit('cropXChange', typeof v === 'number' ? v : 0)"
+          />
+          <span class="hint-inline">Y</span>
+          <el-input-number
+            :model-value="cropY"
+            :min="0"
+            :max="20000"
+            :step="1"
+            size="small"
+            controls-position="right"
+            class="w-lg"
+            @change="(v: number | undefined) => emit('cropYChange', typeof v === 'number' ? v : 0)"
+          />
+          <span class="hint-inline">宽</span>
+          <el-input-number
+            :model-value="cropW"
+            :min="0"
+            :max="20000"
+            :step="1"
+            size="small"
+            controls-position="right"
+            class="w-lg"
+            @change="(v: number | undefined) => emit('cropWChange', typeof v === 'number' ? v : 0)"
+          />
+          <span class="hint-inline">高</span>
+          <el-input-number
+            :model-value="cropH"
+            :min="0"
+            :max="20000"
+            :step="1"
+            size="small"
+            controls-position="right"
+            class="w-lg"
+            @change="(v: number | undefined) => emit('cropHChange', typeof v === 'number' ? v : 0)"
+          />
+          <el-button size="small" type="primary" plain @click="openVisualCrop">
+            可视化裁切
+          </el-button>
+          <span class="hint-inline">原图像素，宽高须 &gt; 0</span>
+        </div>
+      </el-tooltip>
     </div>
 
     <!-- 图+视频混剪选项 -->
@@ -855,33 +917,37 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
             />
           </el-select>
         </div>
-        <div class="opt-item" title="0–1">
-          <span class="label">透明度</span>
-          <el-input-number
-            :model-value="composeOverlayOpacity"
-            :min="0"
-            :max="1"
-            :step="0.1"
-            :precision="2"
-            size="small"
-            controls-position="right"
-            class="w-lg"
-            @change="(v: number | undefined) => emit('composeOverlayOpacityChange', typeof v === 'number' ? v : 0.8)"
-          />
-        </div>
-        <div class="opt-item" title="相对视频短边宽度 %">
-          <span class="label">缩放%</span>
-          <el-input-number
-            :model-value="composeOverlayScalePercent"
-            :min="1"
-            :max="100"
-            :step="1"
-            size="small"
-            controls-position="right"
-            class="w-lg"
-            @change="(v: number | undefined) => emit('composeOverlayScalePercentChange', typeof v === 'number' ? v : 15)"
-          />
-        </div>
+        <el-tooltip content="0–1" placement="top" :show-after="400">
+          <div class="opt-item">
+            <span class="label">透明度</span>
+            <el-input-number
+              :model-value="composeOverlayOpacity"
+              :min="0"
+              :max="1"
+              :step="0.1"
+              :precision="2"
+              size="small"
+              controls-position="right"
+              class="w-lg"
+              @change="(v: number | undefined) => emit('composeOverlayOpacityChange', typeof v === 'number' ? v : 0.8)"
+            />
+          </div>
+        </el-tooltip>
+        <el-tooltip content="相对视频短边宽度 %" placement="top" :show-after="400">
+          <div class="opt-item">
+            <span class="label">缩放%</span>
+            <el-input-number
+              :model-value="composeOverlayScalePercent"
+              :min="1"
+              :max="100"
+              :step="1"
+              size="small"
+              controls-position="right"
+              class="w-lg"
+              @change="(v: number | undefined) => emit('composeOverlayScalePercentChange', typeof v === 'number' ? v : 15)"
+            />
+          </div>
+        </el-tooltip>
         <div class="opt-item">
           <span class="label">边距</span>
           <el-input-number
@@ -895,34 +961,38 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
             @change="(v: number | undefined) => emit('composeOverlayMarginChange', typeof v === 'number' ? v : 16)"
           />
         </div>
-        <div class="opt-item" title="0 表示从开头">
-          <span class="label">起秒</span>
-          <el-input-number
-            :model-value="composeOverlayStartSec"
-            :min="0"
-            :max="86400"
-            :step="0.5"
-            :precision="1"
-            size="small"
-            controls-position="right"
-            class="w-lg"
-            @change="(v: number | undefined) => emit('composeOverlayStartSecChange', typeof v === 'number' ? v : 0)"
-          />
-        </div>
-        <div class="opt-item" title="0 表示到结尾">
-          <span class="label">止秒</span>
-          <el-input-number
-            :model-value="composeOverlayEndSec"
-            :min="0"
-            :max="86400"
-            :step="0.5"
-            :precision="1"
-            size="small"
-            controls-position="right"
-            class="w-lg"
-            @change="(v: number | undefined) => emit('composeOverlayEndSecChange', typeof v === 'number' ? v : 0)"
-          />
-        </div>
+        <el-tooltip content="0 表示从开头" placement="top" :show-after="400">
+          <div class="opt-item">
+            <span class="label">起秒</span>
+            <el-input-number
+              :model-value="composeOverlayStartSec"
+              :min="0"
+              :max="86400"
+              :step="0.5"
+              :precision="1"
+              size="small"
+              controls-position="right"
+              class="w-lg"
+              @change="(v: number | undefined) => emit('composeOverlayStartSecChange', typeof v === 'number' ? v : 0)"
+            />
+          </div>
+        </el-tooltip>
+        <el-tooltip content="0 表示到结尾" placement="top" :show-after="400">
+          <div class="opt-item">
+            <span class="label">止秒</span>
+            <el-input-number
+              :model-value="composeOverlayEndSec"
+              :min="0"
+              :max="86400"
+              :step="0.5"
+              :precision="1"
+              size="small"
+              controls-position="right"
+              class="w-lg"
+              @change="(v: number | undefined) => emit('composeOverlayEndSecChange', typeof v === 'number' ? v : 0)"
+            />
+          </div>
+        </el-tooltip>
       </div>
     </template>
 
@@ -1003,9 +1073,11 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
           <el-button :icon="Folder" size="small" @click="emit('selectOutput')">
             选择目录
           </el-button>
-          <span :title="outputDir || '未选择输出目录'" class="path-text output-path">
-            {{ outputDir || '未选择输出目录' }}
-          </span>
+          <el-tooltip :content="outputDir || '未选择输出目录'" placement="top" :show-after="400">
+            <span class="path-text output-path">
+              {{ outputDir || '未选择输出目录' }}
+            </span>
+          </el-tooltip>
         </template>
         <span v-else class="hint-inline">与源文件同目录</span>
       </div>
@@ -1040,7 +1112,9 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                   ? '{name}_concat'
                   : isMediaComposeMode
                     ? '{name}_compose'
-                    : '{name}_{preset}'
+                    : isVideoMosaicMode
+                      ? '{name}_mosaic'
+                      : '{name}_{preset}'
           "
           class="w-4xl name-template-input"
           @update:model-value="(v: string) => emit('customNameTemplateInput', v)"
@@ -1048,9 +1122,9 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
       </div>
     </div>
 
-    <!-- 高级：编码 / 裁剪 / 体积 / 自定义（图片 / 视频拼接 / 混剪隐藏视频压缩高级项） -->
+    <!-- 高级：编码 / 裁剪 / 体积 / 自定义（图片 / 视频拼接 / 混剪 / 打码隐藏视频压缩高级项） -->
     <div
-      v-if="!isImageMode && !isVideoConcatMode && !isMediaComposeMode"
+      v-if="!isImageMode && !isVideoConcatMode && !isMediaComposeMode && !isVideoMosaicMode"
       class="opt-advanced"
       :class="{ open: advancedOpen }"
     >
@@ -1073,128 +1147,8 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
       <div v-show="advancedOpen" id="opt-advanced-body" class="opt-advanced-body">
         <template v-if="isAudioMode">
           <div class="opt-row">
-            <div class="opt-item" :title="CONCURRENCY_HINT">
-              <span class="label">并发数</span>
-              <el-select
-                :model-value="concurrency"
-                size="small"
-                class="w-xs"
-                @change="(v: number) => emit('concurrencyChange', v)"
-              >
-                <el-option
-                  v-for="n in CONCURRENCY_OPTIONS"
-                  :key="n"
-                  :label="String(n)"
-                  :value="n"
-                />
-              </el-select>
-            </div>
-
-            <div class="opt-divider" aria-hidden="true" />
-
-            <div class="opt-item" title="0 = 不裁剪 / 到结尾">
-              <span class="label">裁剪</span>
-              <span class="hint-inline">开始(秒)</span>
-              <el-input-number
-                :model-value="trimStart"
-                :min="0"
-                :max="86400"
-                :step="1"
-                :precision="1"
-                size="small"
-                controls-position="right"
-                class="w-lg"
-                @change="(v: number | undefined) => emit('trimStartChange', typeof v === 'number' ? v : 0)"
-              />
-              <span class="hint-inline">结束(秒)</span>
-              <el-input-number
-                :model-value="trimEnd"
-                :min="0"
-                :max="86400"
-                :step="1"
-                :precision="1"
-                size="small"
-                controls-position="right"
-                class="w-lg"
-                @change="(v: number | undefined) => emit('trimEndChange', typeof v === 'number' ? v : 0)"
-              />
-            </div>
-          </div>
-        </template>
-
-        <template v-else-if="isVideoCompressMode || isVideoConcatMode || isMediaComposeMode">
-          <div class="opt-row">
-            <div class="opt-item" :title="encoderTitle(isWebm && isVideoCompressMode, encoderInfo)">
-              <span class="label">编码器</span>
-              <el-select
-                :disabled="isWebm && isVideoCompressMode"
-                :model-value="encoder"
-                size="small"
-                class="w-4xl"
-                @change="(v: EncoderId) => emit('encoderChange', v)"
-              >
-                <el-option
-                  v-for="opt in ENCODER_OPTIONS"
-                  :key="opt.value"
-                  :label="encoderOptionLabel(opt)"
-                  :value="opt.value"
-                  :disabled="!isEncoderOptionAvailable(opt.value)"
-                />
-              </el-select>
-              <span v-if="encoderChips.length" class="encoder-chips">
-                <span
-                  v-for="c in encoderChips"
-                  :key="c.key"
-                  class="encoder-chip"
-                  :class="{ ok: c.ok, bad: !c.ok }"
-                >
-                  {{ c.label }}{{ c.ok ? '✓' : '–' }}
-                </span>
-              </span>
-            </div>
-
-            <template v-if="isVideoCompressMode">
-              <div
-                class="opt-item"
-                :title="isWebm ? 'WebM 不适用' : 'Main@L4 利于旧设备/微信'"
-              >
-                <span class="label">兼容档</span>
-                <el-select
-                  :disabled="isWebm"
-                  :model-value="compatProfile"
-                  size="small"
-                  class="w-4xl"
-                  @change="(v: CompatProfile) => emit('compatProfileChange', v)"
-                >
-                  <el-option
-                    v-for="opt in COMPAT_PROFILE_OPTIONS"
-                    :key="opt.value"
-                    :label="opt.label"
-                    :value="opt.value"
-                  />
-                </el-select>
-              </div>
-
-              <div class="opt-divider" aria-hidden="true" />
-
-              <div class="opt-item" title="仅软件 x264/x265 生效；越慢越好">
-                <span class="label">编码速度</span>
-                <el-select
-                  :model-value="encodePreset"
-                  size="small"
-                  class="w-2xl"
-                  @change="(v: EncodePreset) => emit('encodePresetChange', v)"
-                >
-                  <el-option
-                    v-for="opt in ENCODE_PRESET_OPTIONS"
-                    :key="opt.value"
-                    :label="opt.label"
-                    :value="opt.value"
-                  />
-                </el-select>
-              </div>
-
-              <div class="opt-item" :title="CONCURRENCY_HINT">
+            <el-tooltip :content="CONCURRENCY_HINT" placement="top" :show-after="400">
+              <div class="opt-item">
                 <span class="label">并发数</span>
                 <el-select
                   :model-value="concurrency"
@@ -1210,27 +1164,158 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                   />
                 </el-select>
               </div>
+            </el-tooltip>
+
+            <div class="opt-divider" aria-hidden="true" />
+
+            <el-tooltip content="0 = 不裁剪 / 到结尾" placement="top" :show-after="400">
+              <div class="opt-item">
+                <span class="label">裁剪</span>
+                <span class="hint-inline">开始(秒)</span>
+                <el-input-number
+                  :model-value="trimStart"
+                  :min="0"
+                  :max="86400"
+                  :step="1"
+                  :precision="1"
+                  size="small"
+                  controls-position="right"
+                  class="w-lg"
+                  @change="(v: number | undefined) => emit('trimStartChange', typeof v === 'number' ? v : 0)"
+                />
+                <span class="hint-inline">结束(秒)</span>
+                <el-input-number
+                  :model-value="trimEnd"
+                  :min="0"
+                  :max="86400"
+                  :step="1"
+                  :precision="1"
+                  size="small"
+                  controls-position="right"
+                  class="w-lg"
+                  @change="(v: number | undefined) => emit('trimEndChange', typeof v === 'number' ? v : 0)"
+                />
+              </div>
+            </el-tooltip>
+          </div>
+        </template>
+
+        <template v-else-if="isVideoCompressMode || isVideoConcatMode || isMediaComposeMode">
+          <div class="opt-row">
+            <el-tooltip :content="encoderTitle(isWebm && isVideoCompressMode, encoderInfo)" placement="top" :show-after="400">
+              <div class="opt-item">
+                <span class="label">编码器</span>
+                <el-select
+                  :disabled="isWebm && isVideoCompressMode"
+                  :model-value="encoder"
+                  size="small"
+                  class="w-4xl"
+                  @change="(v: EncoderId) => emit('encoderChange', v)"
+                >
+                  <el-option
+                    v-for="opt in ENCODER_OPTIONS"
+                    :key="opt.value"
+                    :label="encoderOptionLabel(opt)"
+                    :value="opt.value"
+                    :disabled="!isEncoderOptionAvailable(opt.value)"
+                  />
+                </el-select>
+                <span v-if="encoderChips.length" class="encoder-chips">
+                  <span
+                    v-for="c in encoderChips"
+                    :key="c.key"
+                    class="encoder-chip"
+                    :class="{ ok: c.ok, bad: !c.ok }"
+                  >
+                    {{ c.label }}{{ c.ok ? '✓' : '–' }}
+                  </span>
+                </span>
+              </div>
+            </el-tooltip>
+
+            <template v-if="isVideoCompressMode">
+              <el-tooltip :content="isWebm ? 'WebM 不适用' : 'Main@L4 利于旧设备/微信'" placement="top" :show-after="400">
+                <div class="opt-item">
+                  <span class="label">兼容档</span>
+                  <el-select
+                    :disabled="isWebm"
+                    :model-value="compatProfile"
+                    size="small"
+                    class="w-4xl"
+                    @change="(v: CompatProfile) => emit('compatProfileChange', v)"
+                  >
+                    <el-option
+                      v-for="opt in COMPAT_PROFILE_OPTIONS"
+                      :key="opt.value"
+                      :label="opt.label"
+                      :value="opt.value"
+                    />
+                  </el-select>
+                </div>
+              </el-tooltip>
+
+              <div class="opt-divider" aria-hidden="true" />
+
+              <el-tooltip content="仅软件 x264/x265 生效；越慢越好" placement="top" :show-after="400">
+                <div class="opt-item">
+                  <span class="label">编码速度</span>
+                  <el-select
+                    :model-value="encodePreset"
+                    size="small"
+                    class="w-2xl"
+                    @change="(v: EncodePreset) => emit('encodePresetChange', v)"
+                  >
+                    <el-option
+                      v-for="opt in ENCODE_PRESET_OPTIONS"
+                      :key="opt.value"
+                      :label="opt.label"
+                      :value="opt.value"
+                    />
+                  </el-select>
+                </div>
+              </el-tooltip>
+
+              <el-tooltip :content="CONCURRENCY_HINT" placement="top" :show-after="400">
+                <div class="opt-item">
+                  <span class="label">并发数</span>
+                  <el-select
+                    :model-value="concurrency"
+                    size="small"
+                    class="w-xs"
+                    @change="(v: number) => emit('concurrencyChange', v)"
+                  >
+                    <el-option
+                      v-for="n in CONCURRENCY_OPTIONS"
+                      :key="n"
+                      :label="String(n)"
+                      :value="n"
+                    />
+                  </el-select>
+                </div>
+              </el-tooltip>
             </template>
           </div>
 
           <template v-if="isVideoCompressMode">
           <div class="opt-row">
-            <div class="opt-item" title="90° 竖→横；180° 上下颠倒">
-              <span class="label">旋转</span>
-              <el-select
-                :model-value="rotate90"
-                size="small"
-                class="w-5xl"
-                @change="(v: Rotate90) => emit('rotate90Change', v)"
-              >
-                <el-option
-                  v-for="opt in ROTATE90_OPTIONS"
-                  :key="opt.value"
-                  :label="opt.label"
-                  :value="opt.value"
-                />
-              </el-select>
-            </div>
+            <el-tooltip content="90° 竖→横；180° 上下颠倒" placement="top" :show-after="400">
+              <div class="opt-item">
+                <span class="label">旋转</span>
+                <el-select
+                  :model-value="rotate90"
+                  size="small"
+                  class="w-5xl"
+                  @change="(v: Rotate90) => emit('rotate90Change', v)"
+                >
+                  <el-option
+                    v-for="opt in ROTATE90_OPTIONS"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+              </div>
+            </el-tooltip>
 
             <div class="opt-item">
               <span class="label">帧率</span>
@@ -1267,15 +1352,22 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
               <span class="hint-inline">MB，0=不限制</span>
             </div>
 
-            <div v-if="targetSizeMb > 0" class="opt-item" title="仅软件 x264/VP9；硬件自动单遍">
-              <span class="label">两遍编码</span>
-              <el-switch
-                :model-value="twoPass"
-                size="small"
-                @change="(v: string | number | boolean) => emit('twoPassChange', Boolean(v))"
-              />
-              <span class="hint-inline">更准更慢</span>
-            </div>
+            <el-tooltip
+              v-if="targetSizeMb > 0"
+              content="仅软件 x264/VP9；硬件自动单遍"
+              placement="top"
+              :show-after="400"
+            >
+              <div class="opt-item">
+                <span class="label">两遍编码</span>
+                <el-switch
+                  :model-value="twoPass"
+                  size="small"
+                  @change="(v: string | number | boolean) => emit('twoPassChange', Boolean(v))"
+                />
+                <span class="hint-inline">更准更慢</span>
+              </div>
+            </el-tooltip>
 
             <template v-if="isCustom">
               <div class="opt-divider" aria-hidden="true" />
@@ -1444,19 +1536,21 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                 />
                 <el-button size="small" @click="emit('selectWatermarkImage')">浏览</el-button>
               </div>
-              <div class="opt-item" title="相对视频短边宽度 %">
-                <span class="label">缩放%</span>
-                <el-input-number
-                  :model-value="watermarkScalePercent"
-                  :min="1"
-                  :max="100"
-                  :step="1"
-                  size="small"
-                  controls-position="right"
-                  class="w-lg"
-                  @change="(v: number | undefined) => emit('watermarkScalePercentChange', typeof v === 'number' ? v : 15)"
-                />
-              </div>
+              <el-tooltip content="相对视频短边宽度 %" placement="top" :show-after="400">
+                <div class="opt-item">
+                  <span class="label">缩放%</span>
+                  <el-input-number
+                    :model-value="watermarkScalePercent"
+                    :min="1"
+                    :max="100"
+                    :step="1"
+                    size="small"
+                    controls-position="right"
+                    class="w-lg"
+                    @change="(v: number | undefined) => emit('watermarkScalePercentChange', typeof v === 'number' ? v : 15)"
+                  />
+                </div>
+              </el-tooltip>
             </template>
 
             <template v-if="watermarkMode === 'text'">
@@ -1501,20 +1595,22 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                   />
                 </el-select>
               </div>
-              <div class="opt-item" title="0–1">
-                <span class="label">透明度</span>
-                <el-input-number
-                  :model-value="watermarkOpacity"
-                  :min="0"
-                  :max="1"
-                  :step="0.1"
-                  :precision="2"
-                  size="small"
-                  controls-position="right"
-                  class="w-lg"
-                  @change="(v: number | undefined) => emit('watermarkOpacityChange', typeof v === 'number' ? v : 0.8)"
-                />
-              </div>
+              <el-tooltip content="0–1" placement="top" :show-after="400">
+                <div class="opt-item">
+                  <span class="label">透明度</span>
+                  <el-input-number
+                    :model-value="watermarkOpacity"
+                    :min="0"
+                    :max="1"
+                    :step="0.1"
+                    :precision="2"
+                    size="small"
+                    controls-position="right"
+                    class="w-lg"
+                    @change="(v: number | undefined) => emit('watermarkOpacityChange', typeof v === 'number' ? v : 0.8)"
+                  />
+                </div>
+              </el-tooltip>
               <div class="opt-item">
                 <span class="label">边距</span>
                 <el-input-number
@@ -1532,14 +1628,16 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
           </div>
 
           <div class="opt-row">
-            <div class="opt-item" title="去掉音轨">
-              <span class="label">静音</span>
-              <el-switch
-                :model-value="muteAudio"
-                size="small"
-                @change="(v: string | number | boolean) => emit('muteAudioChange', Boolean(v))"
-              />
-            </div>
+            <el-tooltip content="去掉音轨" placement="top" :show-after="400">
+              <div class="opt-item">
+                <span class="label">静音</span>
+                <el-switch
+                  :model-value="muteAudio"
+                  size="small"
+                  @change="(v: string | number | boolean) => emit('muteAudioChange', Boolean(v))"
+                />
+              </div>
+            </el-tooltip>
 
             <div v-if="!muteAudio" class="opt-item">
               <span class="label">音轨码率</span>
@@ -1560,48 +1658,35 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 
             <div class="opt-divider" aria-hidden="true" />
 
-            <div class="opt-item" title="0 = 不裁剪 / 到结尾">
-              <span class="label">时间裁剪</span>
-              <span class="hint-inline">开始(秒)</span>
-              <el-input-number
-                :model-value="trimStart"
-                :min="0"
-                :max="86400"
-                :step="1"
-                :precision="1"
-                size="small"
-                controls-position="right"
-                class="w-lg"
-                @change="(v: number | undefined) => emit('trimStartChange', typeof v === 'number' ? v : 0)"
-              />
-              <span class="hint-inline">结束(秒)</span>
-              <el-input-number
-                :model-value="trimEnd"
-                :min="0"
-                :max="86400"
-                :step="1"
-                :precision="1"
-                size="small"
-                controls-position="right"
-                class="w-lg"
-                @change="(v: number | undefined) => emit('trimEndChange', typeof v === 'number' ? v : 0)"
-              />
-            </div>
-          </div>
-
-          <div class="opt-row opt-row-wrap">
-            <div class="opt-item">
-              <el-button
-                size="small"
-                type="primary"
-                plain
-                :disabled="!mosaicEditable"
-                @click="emit('editMosaics')"
-              >
-                视频打码
-              </el-button>
-              <span class="hint-inline">仅编辑当前选中的视频</span>
-            </div>
+            <el-tooltip content="0 = 不裁剪 / 到结尾" placement="top" :show-after="400">
+              <div class="opt-item">
+                <span class="label">时间裁剪</span>
+                <span class="hint-inline">开始(秒)</span>
+                <el-input-number
+                  :model-value="trimStart"
+                  :min="0"
+                  :max="86400"
+                  :step="1"
+                  :precision="1"
+                  size="small"
+                  controls-position="right"
+                  class="w-lg"
+                  @change="(v: number | undefined) => emit('trimStartChange', typeof v === 'number' ? v : 0)"
+                />
+                <span class="hint-inline">结束(秒)</span>
+                <el-input-number
+                  :model-value="trimEnd"
+                  :min="0"
+                  :max="86400"
+                  :step="1"
+                  :precision="1"
+                  size="small"
+                  controls-position="right"
+                  class="w-lg"
+                  @change="(v: number | undefined) => emit('trimEndChange', typeof v === 'number' ? v : 0)"
+                />
+              </div>
+            </el-tooltip>
           </div>
 
           <div class="opt-row opt-row-wrap">
@@ -1672,24 +1757,29 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
       </div>
     </div>
 
-    <!-- 图片 / 拼接 / 混剪：仅并发 -->
-    <div v-if="isImageMode || isVideoConcatMode || isMediaComposeMode" class="opt-row">
-      <div class="opt-item" :title="CONCURRENCY_HINT">
-        <span class="label">并发数</span>
-        <el-select
-          :model-value="concurrency"
-          size="small"
-          class="w-xs"
-          @change="(v: number) => emit('concurrencyChange', v)"
-        >
-          <el-option
-            v-for="n in CONCURRENCY_OPTIONS"
-            :key="n"
-            :label="String(n)"
-            :value="n"
-          />
-        </el-select>
-      </div>
+    <!-- 图片 / 拼接 / 混剪：仅并发（打码为单任务，不展示并发） -->
+    <div
+      v-if="isImageMode || isVideoConcatMode || isMediaComposeMode"
+      class="opt-row"
+    >
+      <el-tooltip :content="CONCURRENCY_HINT" placement="top" :show-after="400">
+        <div class="opt-item">
+          <span class="label">并发数</span>
+          <el-select
+            :model-value="concurrency"
+            size="small"
+            class="w-xs"
+            @change="(v: number) => emit('concurrencyChange', v)"
+          >
+            <el-option
+              v-for="n in CONCURRENCY_OPTIONS"
+              :key="n"
+              :label="String(n)"
+              :value="n"
+            />
+          </el-select>
+        </div>
+      </el-tooltip>
     </div>
 
     <ImageCropDialog

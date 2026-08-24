@@ -24,6 +24,7 @@ import {
   VIDEO_EXTENSIONS
 } from '../../shared/types'
 import {
+  buildOutputPath,
   checkFfmpegAvailable,
   detectHardwareEncoders,
   extractVideoFrame,
@@ -50,6 +51,18 @@ import {
   stopLanServer,
   syncLanServerFromSettings
 } from './lanServer'
+import {
+  allowDir,
+  allowPath,
+  allowPaths,
+  isPathAllowed,
+  pathNotAllowedError
+} from './pathAllowlist'
+import {
+  assertMainWindowSender,
+  handleFromMainWindow,
+  setMainWindowRef
+} from './ipcGuard'
 
 // 固定 ASCII 应用名后再读 userData，避免落到中文产品名目录
 applyAppIdentity()
@@ -325,9 +338,11 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      // Electron 20+ 默认即为 sandbox；preload 仅用 contextBridge/ipcRenderer/webUtils，可安全开启
+      sandbox: true
     }
   })
+  setMainWindowRef(mainWindow)
 
   // 隐藏 macOS 原生红绿灯，统一用自定义按钮（frame:false + titleBarStyle 时仍可能露出）
   if (isMac) {
@@ -417,8 +432,66 @@ function resolveTaskInputPaths(task: CompressTask): string[] {
   return single ? [single] : []
 }
 
+/** 收集任务相关附加资源路径（水印 / 混剪素材） */
+function collectTaskAssetPaths(task: CompressTask): string[] {
+  const out: string[] = []
+  const wm = task.options?.watermark?.imagePath
+  if (typeof wm === 'string' && wm.trim()) out.push(wm.trim())
+  const compose = task.options?.compose
+  if (compose) {
+    for (const p of [
+      compose.intro?.imagePath,
+      compose.outro?.imagePath,
+      compose.overlay?.imagePath
+    ]) {
+      if (typeof p === 'string' && p.trim()) out.push(p.trim())
+    }
+  }
+  return out
+}
+
+/** 将已持久化任务的路径登记到允许列表 */
+function allowTaskPaths(task: CompressTask): void {
+  allowPaths(resolveTaskInputPaths(task))
+  allowPaths(collectTaskAssetPaths(task))
+  if (typeof task.outputPath === 'string' && task.outputPath.trim()) {
+    allowPath(task.outputPath.trim())
+  }
+  const outDir = task.options?.outputDir
+  if (typeof outDir === 'string' && outDir.trim()) {
+    allowDir(outDir.trim())
+  }
+}
+
+/** 启动时播种允许根：userData、设置输出目录、LAN 目录、历史任务 */
+function seedPathAllowlist(settings: AppSettings): void {
+  try {
+    const userData = app.getPath('userData')
+    allowDir(userData)
+    allowDir(join(userData, 'lan-uploads'))
+    allowDir(join(userData, 'lan-outputs'))
+    allowDir(join(userData, 'image-test'))
+  } catch (err) {
+    console.warn('[main] seed userData allowlist failed:', err)
+  }
+
+  if (typeof settings.outputDir === 'string' && settings.outputDir.trim()) {
+    allowDir(settings.outputDir.trim())
+  }
+
+  try {
+    if (settings.persistTasks !== false) {
+      for (const t of loadTasks()) {
+        allowTaskPaths(t)
+      }
+    }
+  } catch (err) {
+    console.warn('[main] seed tasks allowlist failed:', err)
+  }
+}
+
 /**
- * 校验启动任务：路径存在、输出目录、引擎依赖
+ * 校验启动任务：路径存在、输出目录、引擎依赖、路径允许列表
  * skipEngineCheck：批量入口已统一检查引擎时使用
  */
 function validateStartTask(
@@ -437,11 +510,31 @@ function validateStartTask(
     if (!existsSync(p)) {
       return { ok: false, error: `输入文件不存在: ${basename(p)}` }
     }
+    if (!isPathAllowed(p)) {
+      return { ok: false, error: pathNotAllowedError(`输入文件 ${basename(p)}`) }
+    }
+  }
+
+  for (const p of collectTaskAssetPaths(task)) {
+    if (!isPathAllowed(p)) {
+      return { ok: false, error: pathNotAllowedError(`素材 ${basename(p)}`) }
+    }
   }
 
   const dirMode = task.options?.outputDirMode || 'fixed'
   if (dirMode !== 'sidecar' && !task.options?.outputDir) {
     return { ok: false, error: '请先选择输出目录' }
+  }
+
+  // 校验将要写入的输出路径（或 sidecar 下的源目录）
+  const primary = paths[0]
+  try {
+    const planned = buildOutputPath(primary, task.options)
+    if (!isPathAllowed(planned)) {
+      return { ok: false, error: pathNotAllowedError('输出路径') }
+    }
+  } catch {
+    return { ok: false, error: pathNotAllowedError('输出路径') }
   }
 
   const mode = task.options?.mode
@@ -479,7 +572,7 @@ function validateStartTask(
 }
 
 function registerIpc(): void {
-  ipcMain.handle(
+  handleFromMainWindow(
     IpcChannels.SELECT_FILES,
     async (
       _e,
@@ -512,7 +605,8 @@ function registerIpc(): void {
           mode === 'compress' ||
           mode === 'audio' ||
           mode === 'video-concat' ||
-          mode === 'media-compose'
+          mode === 'media-compose' ||
+          mode === 'video-mosaic'
         ) {
           kind = 'video'
         }
@@ -522,7 +616,9 @@ function registerIpc(): void {
         kind === 'image'
           ? '选择图片'
           : kind === 'video'
-            ? '选择视频'
+            ? mode === 'video-mosaic'
+              ? '选择视频（打码仅支持单个）'
+              : '选择视频'
             : '选择媒体文件'
 
       const filters =
@@ -543,9 +639,15 @@ function registerIpc(): void {
                 { name: '所有文件', extensions: ['*'] }
               ]
 
+      // 视频打码仅允许单选
+      const properties: Array<'openFile' | 'multiSelections'> =
+        mode === 'video-mosaic'
+          ? ['openFile']
+          : ['openFile', 'multiSelections']
+
       const result = await dialog.showOpenDialog(mainWindow, {
         title,
-        properties: ['openFile', 'multiSelections'],
+        properties,
         filters
       })
 
@@ -557,11 +659,12 @@ function registerIpc(): void {
         .filter(isMediaFile)
         .map((p) => ({ path: p, name: basename(p) }))
 
+      allowPaths(files.map((f) => f.path))
       return { files }
     }
   )
 
-  ipcMain.handle(IpcChannels.SELECT_DIR, async (_e, defaultPath?: string) => {
+  handleFromMainWindow(IpcChannels.SELECT_DIR, async (_e, defaultPath?: string) => {
     if (!mainWindow) return { path: null }
 
     const start = typeof defaultPath === 'string' ? defaultPath.trim() : ''
@@ -596,10 +699,12 @@ function registerIpc(): void {
     if (result.canceled || !result.filePaths.length) {
       return { path: null }
     }
-    return { path: result.filePaths[0] }
+    const selected = result.filePaths[0]
+    allowDir(selected)
+    return { path: selected }
   })
 
-  ipcMain.handle(IpcChannels.SELECT_IMAGE, async () => {
+  handleFromMainWindow(IpcChannels.SELECT_IMAGE, async () => {
     if (!mainWindow) return { path: null }
 
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -617,14 +722,16 @@ function registerIpc(): void {
     if (result.canceled || !result.filePaths.length) {
       return { path: null }
     }
-    return { path: result.filePaths[0] }
+    const selected = result.filePaths[0]
+    allowPath(selected)
+    return { path: selected }
   })
 
-  ipcMain.handle(IpcChannels.GET_FFMPEG_STATUS, async () => {
+  handleFromMainWindow(IpcChannels.GET_FFMPEG_STATUS, async () => {
     return checkFfmpegAvailable()
   })
 
-  ipcMain.handle(IpcChannels.DETECT_ENCODERS, async () => {
+  handleFromMainWindow(IpcChannels.DETECT_ENCODERS, async () => {
     try {
       return await detectHardwareEncoders(true)
     } catch (err) {
@@ -640,21 +747,21 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle(IpcChannels.SET_CONCURRENCY, async (_e, n: number) => {
+  handleFromMainWindow(IpcChannels.SET_CONCURRENCY, async (_e, n: number) => {
     const concurrency = taskQueue.setConcurrency(Number(n))
     saveSettings({ concurrency })
     return { concurrency }
   })
 
-  ipcMain.handle(IpcChannels.GET_CONCURRENCY, async () => {
+  handleFromMainWindow(IpcChannels.GET_CONCURRENCY, async () => {
     return { concurrency: taskQueue.getConcurrency() }
   })
 
-  ipcMain.handle(IpcChannels.SETTINGS_GET, async () => {
+  handleFromMainWindow(IpcChannels.SETTINGS_GET, async () => {
     return getSettings()
   })
 
-  ipcMain.handle(IpcChannels.SETTINGS_SET, async (_e, partial: Partial<AppSettings>) => {
+  handleFromMainWindow(IpcChannels.SETTINGS_SET, async (_e, partial: Partial<AppSettings>) => {
     // ffmpeg bin 目录需主进程校验；无效则回退不保存（避免把无效目录写盘）
     const part = { ...(partial || {}) }
     // 局域网密码哈希仅允许通过 LAN_SET_CONFIG 写入，避免明文/误改
@@ -697,7 +804,7 @@ function registerIpc(): void {
   })
 
   // 重置全部设置为默认（删除设置文件、清除 ffmpeg / magick 覆盖）
-  ipcMain.handle(IpcChannels.SETTINGS_RESET, async () => {
+  handleFromMainWindow(IpcChannels.SETTINGS_RESET, async () => {
     stopLanServer()
     const next = resetSettings()
     setBinaryOverride('')
@@ -708,12 +815,12 @@ function registerIpc(): void {
   })
 
   // 局域网远程访问状态
-  ipcMain.handle(IpcChannels.LAN_GET_STATUS, async () => {
+  handleFromMainWindow(IpcChannels.LAN_GET_STATUS, async () => {
     return getLanStatus()
   })
 
   // 局域网远程访问配置（开关/端口/账号/密码）
-  ipcMain.handle(
+  handleFromMainWindow(
     IpcChannels.LAN_SET_CONFIG,
     async (_e, config: LanRemoteConfigInput) => {
       return applyLanRemoteConfig(config || {})
@@ -721,7 +828,7 @@ function registerIpc(): void {
   )
 
   // 自定义 ffmpeg bin 目录（空串=清除覆盖）
-  ipcMain.handle(IpcChannels.FFMPEG_SET_BIN_DIR, async (_e, dir: string) => {
+  handleFromMainWindow(IpcChannels.FFMPEG_SET_BIN_DIR, async (_e, dir: string) => {
     const value = typeof dir === 'string' ? dir.trim() : ''
     const override = setBinaryOverride(value)
     if (!override.accepted) {
@@ -731,18 +838,38 @@ function registerIpc(): void {
     return { ok: true }
   })
 
-  ipcMain.handle(IpcChannels.IMAGE_STATUS, async () => {
+  handleFromMainWindow(IpcChannels.IMAGE_STATUS, async () => {
     return getImageEngineStatus()
   })
 
-  ipcMain.handle(
+  handleFromMainWindow(
     IpcChannels.IMAGE_PROCESS,
     async (_e, options: ImageProcessOptions) => {
-      return processImage(options || ({} as ImageProcessOptions))
+      const opts = options || ({} as ImageProcessOptions)
+      const inputPath =
+        typeof opts.inputPath === 'string' ? opts.inputPath.trim() : ''
+      const outputPath =
+        typeof opts.outputPath === 'string' ? opts.outputPath.trim() : ''
+      const stitchInputs = (opts.inputs || [])
+        .map((p) => (typeof p === 'string' ? p.trim() : ''))
+        .filter(Boolean)
+
+      if (inputPath && !isPathAllowed(inputPath)) {
+        return { ok: false, error: pathNotAllowedError('输入路径') }
+      }
+      for (const p of stitchInputs) {
+        if (!isPathAllowed(p)) {
+          return { ok: false, error: pathNotAllowedError(`输入路径 ${basename(p)}`) }
+        }
+      }
+      if (outputPath && !isPathAllowed(outputPath)) {
+        return { ok: false, error: pathNotAllowedError('输出路径') }
+      }
+      return processImage(opts)
     }
   )
 
-  ipcMain.handle(IpcChannels.IMAGE_SET_MAGICK_PATH, async (_e, p: string) => {
+  handleFromMainWindow(IpcChannels.IMAGE_SET_MAGICK_PATH, async (_e, p: string) => {
     const value = typeof p === 'string' ? p.trim() : ''
     const result = setMagickPath(value)
     if (!result.accepted) {
@@ -752,28 +879,40 @@ function registerIpc(): void {
     return { ok: true }
   })
 
-  ipcMain.handle(IpcChannels.IMAGE_GET_INFO, async (_e, filePath: string) => {
-    return getImageInfo(typeof filePath === 'string' ? filePath : '')
+  handleFromMainWindow(IpcChannels.IMAGE_GET_INFO, async (_e, filePath: string) => {
+    const p = typeof filePath === 'string' ? filePath : ''
+    if (p && !isPathAllowed(p)) {
+      return { ok: false, error: pathNotAllowedError('输入路径') }
+    }
+    return getImageInfo(p)
   })
 
-  ipcMain.handle(
+  handleFromMainWindow(
     IpcChannels.IMAGE_GET_DATA_URL,
     async (_e, filePath: string, maxEdge?: number) => {
+      const p = typeof filePath === 'string' ? filePath : ''
+      if (p && !isPathAllowed(p)) {
+        return { ok: false, error: pathNotAllowedError('输入路径') }
+      }
       return getImageDataUrl(
-        typeof filePath === 'string' ? filePath : '',
+        p,
         typeof maxEdge === 'number' ? maxEdge : undefined
       )
     }
   )
 
-  ipcMain.handle(
+  handleFromMainWindow(
     IpcChannels.VIDEO_EXTRACT_FRAME,
     async (
       _e,
       opts: { path?: string; timeSec?: number; maxEdge?: number }
     ) => {
+      const p = typeof opts?.path === 'string' ? opts.path : ''
+      if (p && !isPathAllowed(p)) {
+        return { ok: false, error: pathNotAllowedError('输入路径') }
+      }
       return extractVideoFrame({
-        path: typeof opts?.path === 'string' ? opts.path : '',
+        path: p,
         timeSec:
           typeof opts?.timeSec === 'number' ? opts.timeSec : undefined,
         maxEdge:
@@ -783,12 +922,12 @@ function registerIpc(): void {
   )
 
   // 清空已持久化任务
-  ipcMain.handle(IpcChannels.TASKS_CLEAR, async () => {
+  handleFromMainWindow(IpcChannels.TASKS_CLEAR, async () => {
     return clearStoredTasks()
   })
 
   // 应用信息（「设置」抽屉「关于」）
-  ipcMain.handle(IpcChannels.APP_INFO, async () => {
+  handleFromMainWindow(IpcChannels.APP_INFO, async () => {
     return {
       version: app.getVersion(),
       packaged: app.isPackaged,
@@ -800,32 +939,36 @@ function registerIpc(): void {
   })
 
   // 修改数据目录
-  ipcMain.handle(IpcChannels.SET_DATA_DIR, async (_e, dir: string) => {
+  handleFromMainWindow(IpcChannels.SET_DATA_DIR, async (_e, dir: string) => {
     return setUserDataDir(typeof dir === 'string' ? dir : '')
   })
 
   // 重启应用（数据目录等变更后生效）
-  ipcMain.handle(IpcChannels.RELAUNCH_APP, async () => {
+  handleFromMainWindow(IpcChannels.RELAUNCH_APP, async () => {
     app.relaunch()
     app.exit(0)
   })
 
   // 任务列表持久化：读
-  ipcMain.handle(IpcChannels.TASKS_GET, async () => {
+  handleFromMainWindow(IpcChannels.TASKS_GET, async () => {
     try {
       const settings = getSettings()
       if (settings.persistTasks === false) {
         return []
       }
-      return loadTasks()
+      const tasks = loadTasks()
+      for (const t of tasks) {
+        allowTaskPaths(t)
+      }
+      return tasks
     } catch (err) {
       console.warn('[main] TASKS_GET failed:', err)
       return []
     }
   })
 
-  // 任务列表持久化：写
-  ipcMain.handle(IpcChannels.TASKS_SAVE, async (_e, tasks: CompressTask[]) => {
+  // 任务列表持久化：写（不由此扩展 allowlist，避免渲染进程注入任意路径）
+  handleFromMainWindow(IpcChannels.TASKS_SAVE, async (_e, tasks: CompressTask[]) => {
     try {
       const settings = getSettings()
       if (settings.persistTasks === false) {
@@ -838,7 +981,7 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle(IpcChannels.START_TASK, async (_e, task: CompressTask) => {
+  handleFromMainWindow(IpcChannels.START_TASK, async (_e, task: CompressTask) => {
     try {
       const validated = validateStartTask(task)
       if (!validated.ok) {
@@ -868,7 +1011,7 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle(IpcChannels.START_TASKS, async (_e, tasks: CompressTask[]) => {
+  handleFromMainWindow(IpcChannels.START_TASKS, async (_e, tasks: CompressTask[]) => {
     try {
       if (!Array.isArray(tasks) || tasks.length === 0) {
         return { ok: false, error: '没有可执行的任务' }
@@ -943,21 +1086,24 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle(IpcChannels.CANCEL_TASK, async (_e, taskId: string) => {
+  handleFromMainWindow(IpcChannels.CANCEL_TASK, async (_e, taskId: string) => {
     taskQueue.cancel(taskId)
     return { ok: true }
   })
 
-  ipcMain.handle(IpcChannels.CANCEL_ALL, async () => {
+  handleFromMainWindow(IpcChannels.CANCEL_ALL, async () => {
     taskQueue.cancelAll()
     return { ok: true }
   })
 
   // 用系统默认程序打开文件或目录
-  ipcMain.handle(IpcChannels.OPEN_PATH, async (_e, p: string) => {
+  handleFromMainWindow(IpcChannels.OPEN_PATH, async (_e, p: string) => {
     try {
       if (!p || typeof p !== 'string') {
         return { ok: false, error: '路径无效' }
+      }
+      if (!isPathAllowed(p)) {
+        return { ok: false, error: pathNotAllowedError() }
       }
       if (!existsSync(p)) {
         return { ok: false, error: '路径不存在' }
@@ -974,10 +1120,13 @@ function registerIpc(): void {
   })
 
   // 在资源管理器中显示并选中
-  ipcMain.handle(IpcChannels.SHOW_ITEM_IN_FOLDER, async (_e, p: string) => {
+  handleFromMainWindow(IpcChannels.SHOW_ITEM_IN_FOLDER, async (_e, p: string) => {
     try {
       if (!p || typeof p !== 'string') {
-        return { ok: false }
+        return { ok: false, error: pathNotAllowedError() }
+      }
+      if (!isPathAllowed(p)) {
+        return { ok: false, error: pathNotAllowedError() }
       }
       shell.showItemInFolder(p)
       return { ok: true }
@@ -986,11 +1135,11 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle(IpcChannels.WINDOW_MINIMIZE, async () => {
+  handleFromMainWindow(IpcChannels.WINDOW_MINIMIZE, async () => {
     mainWindow?.minimize()
   })
 
-  ipcMain.handle(IpcChannels.WINDOW_MAXIMIZE, async () => {
+  handleFromMainWindow(IpcChannels.WINDOW_MAXIMIZE, async () => {
     if (!mainWindow) return false
     // macOS 绿键可能进全屏；标题栏按钮统一：最大化 ↔ 还原
     if (mainWindow.isFullScreen()) {
@@ -1005,16 +1154,16 @@ function registerIpc(): void {
     return true
   })
 
-  ipcMain.handle(IpcChannels.WINDOW_CLOSE, async () => {
+  handleFromMainWindow(IpcChannels.WINDOW_CLOSE, async () => {
     handleCloseRequest()
   })
 
-  ipcMain.handle(IpcChannels.WINDOW_IS_MAXIMIZED, async () => {
+  handleFromMainWindow(IpcChannels.WINDOW_IS_MAXIMIZED, async () => {
     if (!mainWindow) return false
     return mainWindow.isMaximized() || mainWindow.isFullScreen()
   })
 
-  ipcMain.handle(
+  handleFromMainWindow(
     IpcChannels.WINDOW_CLOSE_DECISION,
     async (_e, action: 'tray' | 'quit', remember: boolean) => {
       const next: CloseAction = action === 'tray' ? 'tray' : 'quit'
@@ -1029,7 +1178,7 @@ function registerIpc(): void {
     }
   )
 
-  ipcMain.handle(IpcChannels.WINDOW_CLOSE_CANCEL, async () => {
+  handleFromMainWindow(IpcChannels.WINDOW_CLOSE_CANCEL, async () => {
     closeAskPending = false
   })
 
@@ -1037,14 +1186,34 @@ function registerIpc(): void {
   ipcMain.on(
     IpcChannels.FILES_DROPPED_FROM_PRELOAD,
     (event, files: Array<{ path: string; name: string }>) => {
+      assertMainWindowSender(event)
       const list = Array.isArray(files) ? files : []
-      console.log('[main] FILES_DROPPED_FROM_PRELOAD count=', list.length, list)
+      if (isDev()) {
+        console.log('[main] FILES_DROPPED_FROM_PRELOAD count=', list.length, list)
+      } else {
+        console.log(
+          '[main] FILES_DROPPED_FROM_PRELOAD count=',
+          list.length,
+          list.map((f) => (f && f.name) || basename(typeof f?.path === 'string' ? f.path : ''))
+        )
+      }
       const paths = list
         .filter((f) => f && typeof f.path === 'string' && f.path.length > 0)
         .map((f) => f.path)
+      // 拖入的根路径先登记（含目录），展开后的媒体再逐一登记
+      allowPaths(paths)
       // 递归展开目录中的视频+图片（深度 8，最多 500），由前端按 mode 过滤
       const filtered = collectMediaFiles(paths, 500)
-      console.log('[main] forward FILES_DROPPED filtered=', filtered.length, filtered)
+      allowPaths(filtered.map((f) => f.path))
+      if (isDev()) {
+        console.log('[main] forward FILES_DROPPED filtered=', filtered.length, filtered)
+      } else {
+        console.log(
+          '[main] forward FILES_DROPPED filtered=',
+          filtered.length,
+          filtered.map((f) => f.name || basename(f.path))
+        )
+      }
       event.sender.send(IpcChannels.FILES_DROPPED, filtered)
     }
   )
@@ -1063,6 +1232,7 @@ app.whenReady().then(() => {
   setImageEngine(settings.imageEngine || 'sharp')
   taskQueue.setConcurrency(settings.concurrency)
   applyLoginItemSettings(settings)
+  seedPathAllowlist(settings)
   registerIpc()
   registerUpdaterIpc()
   createWindow()

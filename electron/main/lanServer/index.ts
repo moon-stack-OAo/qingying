@@ -27,10 +27,11 @@ import {
 } from '../../../shared/types'
 import {checkFfmpegAvailable, extractVideoFrameJpeg} from '../ffmpeg'
 import {getImageEngineStatus, getImageJpegBuffer} from '../image'
+import {isPathInsideRoot, safeJoinUnderRoot} from '../pathAllowlist'
 import {getSettings, saveSettings} from '../settings'
 import {taskQueue} from '../taskQueue'
 import {MAX_UPLOAD_BYTES, parseMultipart, readJsonBody, sanitizeFileName} from './multipart'
-import {hashPassword, verifyPassword} from './password'
+import {hashPassword, validateLanPassword, verifyPassword} from './password'
 import {LoginRateLimiter} from './rateLimit'
 import {buildSetCookie, parseCookie, SESSION_COOKIE, SessionStore} from './session'
 
@@ -101,9 +102,11 @@ function taskHasThumbnail(task: CompressTask): boolean {
 }
 
 function resolveThumbSourcePath(task: CompressTask): string | null {
+  // 源可能在任务结束后已从 lan-uploads 清理，完成后优先用输出
   const candidates = [
     ...(Array.isArray(task.inputPaths) ? task.inputPaths : []),
-    task.inputPath
+    task.inputPath,
+    task.status === 'completed' ? task.outputPath : ''
   ]
   for (const raw of candidates) {
     const p = typeof raw === 'string' ? raw.trim() : ''
@@ -148,14 +151,56 @@ interface LanTaskRecord {
 
 let server: Server | null = null
 let listenPort = 0
+/** 当前实际监听地址 */
+let listenHost: '0.0.0.0' | '127.0.0.1' = '0.0.0.0'
 let lastError: string | undefined
 const sessions = new SessionStore()
 const loginLimiter = new LoginRateLimiter()
 const lanTasks = new Map<string, LanTaskRecord>()
 let removeQueueListener: (() => void) | null = null
 
+function normalizeBindHost(v: unknown): '0.0.0.0' | '127.0.0.1' {
+  return v === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0'
+}
+
+/** 同时进行的局域网上传上限（解析 multipart / 写盘） */
+const MAX_CONCURRENT_UPLOADS = 2
+let activeUploads = 0
+
 function uploadsDir(): string {
   return path.join(app.getPath('userData'), 'lan-uploads')
+}
+
+/** 判断路径是否位于 lan-uploads 目录内（防误删用户本地文件） */
+function isUnderLanUploads(filePath: string): boolean {
+  if (!filePath || typeof filePath !== 'string') return false
+  try {
+    const root = path.resolve(uploadsDir())
+    const resolved = path.resolve(filePath)
+    const rel = path.relative(root, resolved)
+    return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)
+  } catch {
+    return false
+  }
+}
+
+/** 任务结束后清理局域网上传源文件（仅 lan-uploads 内） */
+function cleanupLanUploadSource(task: CompressTask): void {
+  const candidates = [
+    task.inputPath,
+    ...(Array.isArray(task.inputPaths) ? task.inputPaths : [])
+  ]
+  for (const raw of candidates) {
+    const p = typeof raw === 'string' ? raw.trim() : ''
+    if (!p || !isUnderLanUploads(p)) continue
+    try {
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+        fs.unlinkSync(p)
+      }
+    } catch (err) {
+      console.warn('[lanServer] 清理上传源失败:', path.basename(p), err)
+    }
+  }
 }
 
 function publicDir(): string {
@@ -202,18 +247,29 @@ export function getLanAddresses(): string[] {
 export function getLanStatus(): LanStatus {
   const s = getSettings()
   const port = s.lanPort || DEFAULT_LAN_PORT
+  const bindHost = runningBindOrSetting(s.lanBindHost)
   const running = server != null && listenPort > 0
   const activePort = running ? listenPort : port
-  const urls = getLanAddresses().map((ip) => `http://${ip}:${activePort}`)
+  // 仅本机绑定时只暴露 loopback；局域网绑定则列出网卡地址
+  const urls =
+    bindHost === '127.0.0.1'
+      ? [`http://127.0.0.1:${activePort}`]
+      : getLanAddresses().map((ip) => `http://${ip}:${activePort}`)
   return {
     enabled: Boolean(s.lanRemoteEnabled),
     running,
     port: activePort,
+    bindHost,
     username: s.lanUsername || 'admin',
     hasPassword: Boolean(s.lanPasswordHash),
     urls,
     error: lastError
   }
+}
+
+function runningBindOrSetting(settingHost: unknown): '0.0.0.0' | '127.0.0.1' {
+  if (server != null && listenPort > 0) return listenHost
+  return normalizeBindHost(settingHost)
 }
 
 function json(
@@ -231,12 +287,22 @@ function json(
   res.end(data)
 }
 
-function clientIp(req: IncomingMessage): string {
-  const xf = req.headers['x-forwarded-for']
-  if (typeof xf === 'string' && xf.trim()) {
-    return xf.split(',')[0].trim()
+/**
+ * 规范化 socket 地址：去掉 IPv6 mapped 前缀（::ffff:127.0.0.1 → 127.0.0.1）
+ * 默认不信任 X-Forwarded-For（直连服务可被伪造绕过限流）
+ */
+function normalizeRemoteAddress(addr: string | undefined | null): string {
+  if (!addr || typeof addr !== 'string') return 'unknown'
+  let ip = addr.trim()
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.slice(7)
   }
-  return req.socket.remoteAddress || 'unknown'
+  return ip || 'unknown'
+}
+
+function clientIp(req: IncomingMessage): string {
+  // 仅使用 TCP 对端地址；不读取 X-Forwarded-For
+  return normalizeRemoteAddress(req.socket.remoteAddress)
 }
 
 function getSession(req: IncomingMessage) {
@@ -515,6 +581,15 @@ function updateLanTaskFromEnd(p: TaskEndPayload): void {
     commandLine: p.commandLine,
     etaSec: p.status === 'completed' ? 0 : rec.task.etaSec
   }
+  // 局域网任务结束（完成/失败/取消）后删除上传源，释放磁盘；仅限 lan-uploads
+  if (
+    rec.fromLan &&
+    (p.status === 'completed' ||
+      p.status === 'failed' ||
+      p.status === 'cancelled')
+  ) {
+    cleanupLanUploadSource(rec.task)
+  }
 }
 
 function attachQueueListener(): void {
@@ -663,7 +738,18 @@ async function handleCreateTask(
 ): Promise<void> {
   if (!requireAuth(req, res)) return
 
+  if (activeUploads >= MAX_CONCURRENT_UPLOADS) {
+    // 丢弃未读 body，避免连接挂起
+    req.resume()
+    json(res, 429, {
+      ok: false,
+      error: `当前上传过多，最多同时 ${MAX_CONCURRENT_UPLOADS} 个，请稍后再试`
+    })
+    return
+  }
+
   ensureUploadsDir()
+  activeUploads += 1
   let parsed
   try {
     parsed = await parseMultipart(req, uploadsDir(), MAX_UPLOAD_BYTES)
@@ -671,6 +757,8 @@ async function handleCreateTask(
     const msg = e instanceof Error ? e.message : String(e)
     json(res, 400, { ok: false, error: msg })
     return
+  } finally {
+    activeUploads = Math.max(0, activeUploads - 1)
   }
 
   const file =
@@ -991,8 +1079,20 @@ function handleDownload(
     return
   }
 
-  // 确认输出路径在用户目录或 outputDir 下（防误配）
+  // 强制输出路径落在 lan-outputs 或当前 settings.outputDir 之下（防路径穿越 / 误配）
   const resolved = path.resolve(t.outputPath)
+  const settings = getSettings()
+  const lanOutputsRoot = path.join(app.getPath('userData'), 'lan-outputs')
+  const allowedRoots = [lanOutputsRoot]
+  if (settings.outputDir && settings.outputDir.trim()) {
+    allowedRoots.push(settings.outputDir.trim())
+  }
+  const underAllowed = allowedRoots.some((root) => isPathInsideRoot(root, resolved))
+  if (!underAllowed) {
+    json(res, 403, { ok: false, error: '输出路径不在允许目录内' })
+    return
+  }
+
   try {
     const st = fs.statSync(resolved)
     if (!st.isFile()) {
@@ -1046,16 +1146,8 @@ function guessMime(name: string): string {
 }
 
 function safeJoinPublic(urlPath: string): string | null {
-  const root = path.resolve(publicDir())
-  // 去掉 query
-  const clean = urlPath.split('?')[0].split('#')[0]
-  let rel = decodeURIComponent(clean)
-  if (rel === '/' || rel === '') rel = '/index.html'
-  if (rel.includes('\0')) return null
-  // 去掉开头 /
-  const joined = path.resolve(root, '.' + rel.replace(/\\/g, '/'))
-  if (!joined.startsWith(root)) return null
-  return joined
+  // 使用 relative / canonicalize，避免 startsWith 前缀误判（如 root 为 /pub 时误放行 /public）
+  return safeJoinUnderRoot(publicDir(), urlPath)
 }
 
 function serveStatic(req: IncomingMessage, res: ServerResponse): void {
@@ -1179,7 +1271,7 @@ async function handleRequest(
 }
 
 /**
- * 启动局域网 HTTP 服务（0.0.0.0）
+ * 启动局域网 HTTP 服务（按设置绑定 0.0.0.0 或 127.0.0.1）
  */
 export function startLanServer(port?: number): Promise<LanStatus> {
   return new Promise((resolve) => {
@@ -1188,10 +1280,11 @@ export function startLanServer(port?: number): Promise<LanStatus> {
       typeof port === 'number' && Number.isFinite(port)
         ? Math.max(1024, Math.min(65535, Math.floor(port)))
         : settings.lanPort || DEFAULT_LAN_PORT
+    const host = normalizeBindHost(settings.lanBindHost)
 
     if (server) {
-      // 已在运行：若端口一致直接返回
-      if (listenPort === p) {
+      // 已在运行：端口与绑定地址均一致则直接返回
+      if (listenPort === p && listenHost === host) {
         lastError = undefined
         resolve(getLanStatus())
         return
@@ -1218,14 +1311,16 @@ export function startLanServer(port?: number): Promise<LanStatus> {
       console.warn('[lanServer] listen error:', lastError)
       server = null
       listenPort = 0
+      listenHost = '0.0.0.0'
       resolve(getLanStatus())
     })
 
-    s.listen(p, '0.0.0.0', () => {
+    s.listen(p, host, () => {
       server = s
       listenPort = p
+      listenHost = host
       lastError = undefined
-      console.log(`[lanServer] listening on 0.0.0.0:${p}`)
+      console.log(`[lanServer] listening on ${host}:${p}`)
       resolve(getLanStatus())
     })
   })
@@ -1244,6 +1339,7 @@ export function stopLanServer(): LanStatus {
     server = null
   }
   listenPort = 0
+  listenHost = '0.0.0.0'
   sessions.clearAll()
   loginLimiter.clearAll()
   // 保留 lanTasks 状态，便于再次开启后查看历史；不 detach 进度监听以便运行中任务仍更新
@@ -1268,6 +1364,9 @@ export async function applyLanRemoteConfig(
     if (typeof input.port === 'number' && Number.isFinite(input.port)) {
       partial.lanPort = Math.max(1024, Math.min(65535, Math.floor(input.port)))
     }
+    if (input.bindHost === '0.0.0.0' || input.bindHost === '127.0.0.1') {
+      partial.lanBindHost = input.bindHost
+    }
     if (typeof input.username === 'string') {
       const u = input.username.trim()
       if (u && u.length <= 64) {
@@ -1277,18 +1376,12 @@ export async function applyLanRemoteConfig(
 
     let passwordChanged = false
     if (typeof input.password === 'string' && input.password.length > 0) {
-      if (input.password.length < 4) {
+      const pwdErr = validateLanPassword(input.password)
+      if (pwdErr) {
         return {
           ok: false,
           status: getLanStatus(),
-          error: '密码至少 4 位'
-        }
-      }
-      if (input.password.length > 128) {
-        return {
-          ok: false,
-          status: getLanStatus(),
-          error: '密码过长'
+          error: pwdErr
         }
       }
       partial.lanPasswordHash = hashPassword(input.password)
@@ -1317,10 +1410,12 @@ export async function applyLanRemoteConfig(
       }
     }
 
-    // 端口变更或未运行 → 重启
+    const desiredHost = normalizeBindHost(next.lanBindHost)
+    // 端口/绑定变更、改密或未运行 → 重启
     const needRestart =
       !server ||
       listenPort !== next.lanPort ||
+      listenHost !== desiredHost ||
       passwordChanged
 
     if (needRestart) {
@@ -1358,7 +1453,8 @@ export async function syncLanServerFromSettings(): Promise<LanStatus> {
     if (server) stopLanServer()
     return getLanStatus()
   }
-  if (server && listenPort === s.lanPort) {
+  const desiredHost = normalizeBindHost(s.lanBindHost)
+  if (server && listenPort === s.lanPort && listenHost === desiredHost) {
     return getLanStatus()
   }
   return startLanServer(s.lanPort)

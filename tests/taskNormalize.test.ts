@@ -81,6 +81,62 @@ describe('normalizeTaskForRestore', () => {
   it('缺 id/inputPath 返回 null', () => {
     expect(normalizeTaskForRestore({ fileName: 'x' })).toBeNull()
   })
+
+  it('compress 任务上的 mosaics 恢复时剥离', () => {
+    const t = normalizeTaskForRestore(
+      makeTask({
+        id: 'm1',
+        inputPath: 'D:\\v\\a.mp4',
+        options: {
+          ...baseOpts,
+          mode: 'compress',
+          mosaics: [
+            {
+              id: 'r1',
+              startSec: 0,
+              x: 10,
+              y: 10,
+              w: 100,
+              h: 80,
+              mode: 'pixelate',
+              strength: 16
+            }
+          ]
+        }
+      }),
+      { inputExists: () => true }
+    )
+    expect(t).not.toBeNull()
+    expect(t!.options.mosaics).toBeUndefined()
+  })
+
+  it('video-mosaic 任务保留 mosaics', () => {
+    const mosaics = [
+      {
+        id: 'r1',
+        startSec: 0,
+        x: 10,
+        y: 10,
+        w: 100,
+        h: 80,
+        mode: 'pixelate' as const,
+        strength: 16
+      }
+    ]
+    const t = normalizeTaskForRestore(
+      makeTask({
+        id: 'm2',
+        inputPath: 'D:\\v\\b.mp4',
+        options: {
+          ...baseOpts,
+          mode: 'video-mosaic',
+          mosaics
+        }
+      }),
+      { inputExists: () => true }
+    )
+    expect(t!.options.mosaics).toEqual(mosaics)
+  })
 })
 
 describe('normalizeTasksForRestore / serializeTasksForPersist', () => {

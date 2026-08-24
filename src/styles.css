@@ -164,6 +164,13 @@ body,
   font-size: var(--fs-md);
 }
 
+/* tooltip 多行/路径：保留换行并允许长路径断行 */
+.tooltip-pre-line {
+  white-space: pre-line;
+  max-width: 420px;
+  word-break: break-all;
+}
+
 /* 控件宽度工具类 */
 .w-xs {
   width: 80px;

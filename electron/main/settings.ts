@@ -61,6 +61,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   concatPreferCopy: true,
   lanRemoteEnabled: false,
   lanPort: 17890,
+  lanBindHost: '0.0.0.0',
   lanUsername: 'admin',
   lanPasswordHash: ''
 }
@@ -85,6 +86,7 @@ function normalizeTaskMode(v: unknown): TaskMode {
     v === 'image-stitch' ||
     v === 'video-concat' ||
     v === 'media-compose' ||
+    v === 'video-mosaic' ||
     v === 'compress'
   ) {
     return v
@@ -152,6 +154,10 @@ function normalizeLanPort(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(v)
   if (!Number.isFinite(n)) return DEFAULT_SETTINGS.lanPort
   return Math.max(1024, Math.min(65535, Math.floor(n)))
+}
+
+function normalizeLanBindHost(v: unknown): AppSettings['lanBindHost'] {
+  return v === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0'
 }
 
 function normalizeLanUsername(v: unknown): string {
@@ -277,6 +283,7 @@ function normalize(raw: Partial<AppSettings> | null | undefined): AppSettings {
         ? src.lanRemoteEnabled
         : DEFAULT_SETTINGS.lanRemoteEnabled,
     lanPort: normalizeLanPort(src.lanPort),
+    lanBindHost: normalizeLanBindHost(src.lanBindHost),
     lanUsername: normalizeLanUsername(src.lanUsername),
     lanPasswordHash:
       typeof src.lanPasswordHash === 'string' ? src.lanPasswordHash : ''

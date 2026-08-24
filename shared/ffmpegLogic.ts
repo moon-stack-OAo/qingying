@@ -20,6 +20,7 @@ import {
   DEFAULT_COMPOSE_NAME_TEMPLATE,
   DEFAULT_CONCAT_NAME_TEMPLATE,
   DEFAULT_IMAGE_NAME_TEMPLATE,
+  DEFAULT_MOSAIC_NAME_TEMPLATE,
   DEFAULT_NAME_TEMPLATE,
   DEFAULT_VIDEO_AUDIO_BITRATE
 } from './types'
@@ -734,6 +735,59 @@ export function escapeDrawtext(text: string): string {
     .replace(/%/g, '\\%')
 }
 
+/** drawtext 允许的命名色（小写）；非法输入回退 white，避免注入 filter */
+const DRAWTEXT_NAMED_COLORS = new Set([
+  'white',
+  'black',
+  'red',
+  'green',
+  'blue',
+  'yellow',
+  'cyan',
+  'magenta',
+  'orange',
+  'pink',
+  'purple',
+  'gray',
+  'grey',
+  'brown',
+  'navy',
+  'teal',
+  'lime',
+  'maroon',
+  'olive',
+  'silver',
+  'gold',
+  'violet',
+  'indigo',
+  'aqua',
+  'fuchsia'
+])
+
+/**
+ * 规范化 drawtext fontcolor：仅允许命名色或 #RGB/#RRGGBB/#RRGGBBAA / 0xRRGGBB
+ * 非法值回退为 white，绝不把原始字符串拼进 filter
+ */
+export function sanitizeDrawtextFontColor(
+  raw: unknown,
+  fallback = 'white'
+): string {
+  const s = typeof raw === 'string' ? raw.trim() : ''
+  if (!s) return fallback
+  // 去掉可能已带的 @alpha，统一由调用方拼接 opacity
+  const base = s.replace(/@[\d.]+$/i, '').trim()
+  if (!base) return fallback
+  const lower = base.toLowerCase()
+  if (DRAWTEXT_NAMED_COLORS.has(lower)) return lower
+  if (/^#[0-9a-f]{3}$/i.test(base) || /^#[0-9a-f]{6}$/i.test(base) || /^#[0-9a-f]{8}$/i.test(base)) {
+    return base.toLowerCase()
+  }
+  if (/^0x[0-9a-f]{6}$/i.test(base) || /^0x[0-9a-f]{8}$/i.test(base)) {
+    return base.toLowerCase()
+  }
+  return fallback
+}
+
 /** filter 路径转义：反斜杠改正斜杠，并转义 : ' */
 export function escapeFilterPath(p: string): string {
   return String(p ?? '')
@@ -875,7 +929,7 @@ export function planVideoFilters(
     const enable = buildWatermarkEnableExpr(wm.startSec, wm.endSec)
     if (wm.mode === 'text') {
       const fontSize = normalizeNonNegInt(wm.fontSize, 24) || 24
-      const colorBase = (wm.fontColor || 'white').trim().replace(/@[\d.]+$/i, '') || 'white'
+      const colorBase = sanitizeDrawtextFontColor(wm.fontColor, 'white')
       const text = escapeDrawtext(wm.text || '')
       const font = opts?.fontfile ? `:fontfile='${escapeFilterPath(opts.fontfile)}'` : ''
       const enablePart = enable ? `:enable='${enable}'` : ''
@@ -906,9 +960,8 @@ export function planVideoFilters(
 
   if (wm.mode === 'text') {
     const fontSize = normalizeNonNegInt(wm.fontSize, 24) || 24
-    const rawColor = (wm.fontColor || 'white').trim() || 'white'
-    // 去掉可能已带的 @alpha，统一用 opacity
-    const colorBase = rawColor.replace(/@[\d.]+$/i, '')
+    // 白名单规范化颜色，非法值回退 white，避免 filter 注入
+    const colorBase = sanitizeDrawtextFontColor(wm.fontColor, 'white')
     const fontcolor = `${colorBase}@${opacity}`
     const text = escapeDrawtext(wm.text || '')
     const parts: string[] = [
@@ -1614,10 +1667,11 @@ function resolveImageOutputExt(
  * 根据输入路径与选项生成输出路径（不检查文件是否存在）
  * - mode=audio：扩展名用 audioFormat，默认模板 {name}_audio
  * - mode=image|image-crop|image-stitch：扩展名来自 options.image?.format，默认模板 {name}_img
- * - mode=video-concat：与 compress 类似，默认模板 {name}_concat
- * - mode=media-compose：默认模板 {name}_compose
- * @param now 可选时钟注入，便于单测 date/time 占位符
- */
+  * - mode=video-concat：与 compress 类似，默认模板 {name}_concat
+  * - mode=media-compose：默认模板 {name}_compose
+  * - mode=video-mosaic：默认模板 {name}_mosaic
+  * @param now 可选时钟注入，便于单测 date/time 占位符
+  */
 export function buildOutputPath(
   inputPath: string,
   options: CompressOptions,
@@ -1629,6 +1683,7 @@ export function buildOutputPath(
   const isImage = isImageMode(mode)
   const isConcat = mode === 'video-concat'
   const isCompose = mode === 'media-compose'
+  const isMosaic = mode === 'video-mosaic'
 
   let ext: string
   let defaultTpl: string
@@ -1644,6 +1699,9 @@ export function buildOutputPath(
   } else if (isCompose) {
     ext = options.format || 'mp4'
     defaultTpl = DEFAULT_COMPOSE_NAME_TEMPLATE
+  } else if (isMosaic) {
+    ext = options.format || 'mp4'
+    defaultTpl = DEFAULT_MOSAIC_NAME_TEMPLATE
   } else {
     ext = options.format || 'mp4'
     defaultTpl = DEFAULT_NAME_TEMPLATE

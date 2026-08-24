@@ -8,6 +8,14 @@ import {
   planImageStitch
 } from '../../../shared/imageLogic'
 import { checkSharpReady } from './bin'
+import {
+  ImageCancelledError,
+  awaitWithCancel,
+  isCancelled,
+  isImageCancelledError,
+  removeIncompleteOutput,
+  type TaskCancelSignal
+} from './cancel'
 
 type SharpFn = {
   (input?: string | Buffer, options?: unknown): SharpInstance
@@ -144,11 +152,23 @@ function resolveFormat(
   )
 }
 
+function throwIfCancelled(signal?: TaskCancelSignal): void {
+  if (isCancelled(signal)) {
+    throw new ImageCancelledError()
+  }
+}
+
+function cancelledResult(outputPath?: string): ImageProcessResult {
+  if (outputPath) removeIncompleteOutput(outputPath)
+  return { ok: false, engine: 'sharp', error: '已取消', cancelled: true }
+}
+
 async function processStitch(
   sharp: SharpFn,
   options: ImageProcessOptions,
   inputs: string[],
-  outputPath: string
+  outputPath: string,
+  signal?: TaskCancelSignal
 ): Promise<ImageProcessResult> {
   for (const p of inputs) {
     if (!fs.existsSync(p)) {
@@ -156,9 +176,12 @@ async function processStitch(
     }
   }
 
+  throwIfCancelled(signal)
+
   const sizes: Array<{ width: number; height: number }> = []
   for (const p of inputs) {
-    const meta = await sharp(p).rotate().metadata()
+    throwIfCancelled(signal)
+    const meta = await awaitWithCancel(sharp(p).rotate().metadata(), signal)
     const w = meta.width || 0
     const h = meta.height || 0
     if (w <= 0 || h <= 0) {
@@ -170,6 +193,8 @@ async function processStitch(
     }
     sizes.push({ width: w, height: h })
   }
+
+  throwIfCancelled(signal)
 
   const plan = planImageStitch(inputs, sizes, {
     layout: options.layout,
@@ -190,20 +215,26 @@ async function processStitch(
   const composites: Array<{ input: Buffer; left: number; top: number }> = []
 
   for (const item of plan.items) {
-    const buf = await sharp(item.path)
-      .rotate()
-      .resize({
-        width: item.width,
-        height: item.height,
-        fit: 'fill'
-      })
-      .toBuffer()
+    throwIfCancelled(signal)
+    const buf = await awaitWithCancel(
+      sharp(item.path)
+        .rotate()
+        .resize({
+          width: item.width,
+          height: item.height,
+          fit: 'fill'
+        })
+        .toBuffer(),
+      signal
+    )
     composites.push({
       input: buf,
       left: item.left,
       top: item.top
     })
   }
+
+  throwIfCancelled(signal)
 
   let pipeline = sharp({
     create: {
@@ -237,7 +268,11 @@ async function processStitch(
   )
   pipeline = applyFormat(pipeline, resolvedFormat, quality)
 
-  const info = await pipeline.toFile(outputPath)
+  const info = await awaitWithCancel(pipeline.toFile(outputPath), signal, () =>
+    removeIncompleteOutput(outputPath)
+  )
+  throwIfCancelled(signal)
+
   let size: number | undefined
   try {
     size = fs.statSync(outputPath).size
@@ -256,7 +291,8 @@ async function processStitch(
 }
 
 export async function processWithSharp(
-  options: ImageProcessOptions
+  options: ImageProcessOptions,
+  signal?: TaskCancelSignal
 ): Promise<ImageProcessResult> {
   if (!checkSharpReady()) {
     return { ok: false, engine: 'sharp', error: 'sharp 不可用' }
@@ -272,6 +308,10 @@ export async function processWithSharp(
     .filter(Boolean)
 
   try {
+    if (isCancelled(signal)) {
+      return cancelledResult()
+    }
+
     const outDir = path.dirname(outputPath)
     if (!fs.existsSync(outDir)) {
       fs.mkdirSync(outDir, { recursive: true })
@@ -280,7 +320,13 @@ export async function processWithSharp(
     const sharp = loadSharp()
 
     if (stitchInputs.length >= 2) {
-      return await processStitch(sharp, options, stitchInputs, outputPath)
+      return await processStitch(
+        sharp,
+        options,
+        stitchInputs,
+        outputPath,
+        signal
+      )
     }
 
     const inputPath = (options.inputPath || stitchInputs[0] || '').trim()
@@ -290,6 +336,8 @@ export async function processWithSharp(
     if (!fs.existsSync(inputPath)) {
       return { ok: false, engine: 'sharp', error: '输入文件不存在' }
     }
+
+    throwIfCancelled(signal)
 
     const maxEdge = normalizeMaxEdge(options.maxEdge)
     const quality = normalizeImageQuality(options.quality, 80)
@@ -325,7 +373,11 @@ export async function processWithSharp(
     const resolvedFormat = resolveFormat(options.format, outputPath, inputPath)
     pipeline = applyFormat(pipeline, resolvedFormat, quality)
 
-    const info = await pipeline.toFile(outputPath)
+    const info = await awaitWithCancel(pipeline.toFile(outputPath), signal, () =>
+      removeIncompleteOutput(outputPath)
+    )
+    throwIfCancelled(signal)
+
     let size: number | undefined
     try {
       size = fs.statSync(outputPath).size
@@ -342,6 +394,9 @@ export async function processWithSharp(
       size
     }
   } catch (err) {
+    if (isImageCancelledError(err) || isCancelled(signal)) {
+      return cancelledResult(outputPath)
+    }
     const message = err instanceof Error ? err.message : String(err)
     return { ok: false, engine: 'sharp', error: message || 'sharp 处理失败' }
   }

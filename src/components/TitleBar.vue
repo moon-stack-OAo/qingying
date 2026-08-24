@@ -76,66 +76,84 @@ async function close(): Promise<void> {
 
 <template>
   <header class="title-bar" @dblclick="toggleMaximize">
-    <div class="title-bar-left" :title="`${PRODUCT_NAME} v${appVersion}`">
-      <img class="title-bar-icon" src="../favicon.png" alt="" draggable="false" />
-      <div class="title-bar-text">
-        <span class="title-bar-name">{{ PRODUCT_NAME }}</span>
-        <span class="title-bar-ver">v{{ appVersion }}</span>
+    <div class="title-bar-left">
+      <el-tooltip
+        :content="`${PRODUCT_NAME} v${appVersion}`"
+        placement="top"
+        :show-after="400"
+      >
+        <div class="title-bar-brand">
+          <img class="title-bar-icon" src="../favicon.png" alt="" draggable="false" />
+          <div class="title-bar-text">
+            <span class="title-bar-name">{{ PRODUCT_NAME }}</span>
+            <span class="title-bar-ver">v{{ appVersion }}</span>
+          </div>
+        </div>
+      </el-tooltip>
+      <el-tooltip
+        v-if="showUpdateBadge"
+        :content="updateBadgeTip"
+        placement="top"
+        :show-after="400"
+      >
         <button
-          v-if="showUpdateBadge"
           type="button"
           class="title-bar-new"
           :class="{ 'is-ready': updateDownloaded }"
-          :title="updateBadgeTip"
           @click.stop="emit('openUpdate')"
         >
           {{ updateBadgeLabel }}
         </button>
-      </div>
-      <span
-        class="title-bar-status"
-        :class="ffmpegReady ? 'is-ready' : 'is-bad'"
-        :title="ffmpegTip"
+      </el-tooltip>
+      <el-tooltip
+        :content="ffmpegTip"
+        placement="top"
+        :show-after="400"
+        popper-class="tooltip-pre-line"
       >
-        <span class="title-bar-status-dot" aria-hidden="true" />
-        {{ ffmpegReady ? 'FFmpeg 就绪' : 'FFmpeg 未就绪' }}
-      </span>
+        <span
+          class="title-bar-status"
+          :class="ffmpegReady ? 'is-ready' : 'is-bad'"
+        >
+          <span class="title-bar-status-dot" aria-hidden="true" />
+          {{ ffmpegReady ? 'FFmpeg 就绪' : 'FFmpeg 未就绪' }}
+        </span>
+      </el-tooltip>
     </div>
 
     <div class="title-bar-drag" aria-hidden="true" />
 
     <div class="title-bar-actions">
-      <button
-        type="button"
-        class="tb-btn"
-        title="帮助 (F1)"
-        @click="emit('showShortcuts')"
+      <el-tooltip content="帮助 (F1)" placement="top" :show-after="400">
+        <button type="button" class="tb-btn" @click="emit('showShortcuts')">
+          <el-icon :size="15"><QuestionFilled /></el-icon>
+        </button>
+      </el-tooltip>
+      <el-tooltip content="设置" placement="top" :show-after="400">
+        <button type="button" class="tb-btn" @click="emit('openSettings')">
+          <el-icon :size="15"><Setting /></el-icon>
+        </button>
+      </el-tooltip>
+      <el-tooltip content="最小化" placement="top" :show-after="400">
+        <button type="button" class="tb-btn" @click="minimize">
+          <el-icon :size="14"><Minus /></el-icon>
+        </button>
+      </el-tooltip>
+      <el-tooltip
+        :content="maximized ? '还原' : '最大化'"
+        placement="top"
+        :show-after="400"
       >
-        <el-icon :size="15"><QuestionFilled /></el-icon>
-      </button>
-      <button
-        type="button"
-        class="tb-btn"
-        title="设置"
-        @click="emit('openSettings')"
-      >
-        <el-icon :size="15"><Setting /></el-icon>
-      </button>
-      <button type="button" class="tb-btn" title="最小化" @click="minimize">
-        <el-icon :size="14"><Minus /></el-icon>
-      </button>
-      <button
-        type="button"
-        class="tb-btn"
-        :title="maximized ? '还原' : '最大化'"
-        @click="toggleMaximize"
-      >
-        <el-icon v-if="!maximized" :size="13"><FullScreen /></el-icon>
-        <span v-else class="tb-restore" aria-hidden="true" />
-      </button>
-      <button type="button" class="tb-btn tb-close" title="关闭" @click="close">
-        <el-icon :size="15"><Close /></el-icon>
-      </button>
+        <button type="button" class="tb-btn" @click="toggleMaximize">
+          <el-icon v-if="!maximized" :size="13"><FullScreen /></el-icon>
+          <span v-else class="tb-restore" aria-hidden="true" />
+        </button>
+      </el-tooltip>
+      <el-tooltip content="关闭" placement="top" :show-after="400">
+        <button type="button" class="tb-btn tb-close" @click="close">
+          <el-icon :size="15"><Close /></el-icon>
+        </button>
+      </el-tooltip>
     </div>
   </header>
 </template>
@@ -159,6 +177,15 @@ async function close(): Promise<void> {
   padding: 0 10px 0 12px;
   min-width: 0;
   -webkit-app-region: drag;
+}
+
+.title-bar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  /* 需接收悬停以显示 tooltip，不可整块 drag */
+  -webkit-app-region: no-drag;
 }
 
 .title-bar-icon {
@@ -271,6 +298,8 @@ async function close(): Promise<void> {
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* 需接收悬停以显示路径 tooltip */
+  -webkit-app-region: no-drag;
 }
 
 .title-bar-status-dot {
@@ -302,6 +331,16 @@ async function close(): Promise<void> {
   align-items: stretch;
   flex-shrink: 0;
   -webkit-app-region: no-drag;
+}
+
+/* el-tooltip 触发器保持标题栏按钮拉伸高度 */
+.title-bar-actions :deep(.el-tooltip__trigger) {
+  display: inline-flex;
+  align-self: stretch;
+}
+
+.title-bar-actions :deep(.el-tooltip__trigger) .tb-btn {
+  height: 100%;
 }
 
 .tb-btn {

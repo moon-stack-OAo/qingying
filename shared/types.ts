@@ -4,7 +4,7 @@ export type PresetId = 'archive' | 'standard' | 'social' | 'custom'
 /** 输出格式（视频容器） */
 export type OutputFormat = 'mp4' | 'webm' | 'mkv' | 'mov'
 
-/** 任务模式：视频压缩 / 仅抽音频 / 图片 / 视频拼接 / 图+视频混剪 */
+/** 任务模式：视频压缩 / 仅抽音频 / 图片 / 视频拼接 / 图+视频混剪 / 视频打码 */
 export type TaskMode =
   | 'compress'
   | 'audio'
@@ -13,6 +13,7 @@ export type TaskMode =
   | 'image-stitch'
   | 'video-concat'
   | 'media-compose'
+  | 'video-mosaic'
 
 /** 音频抽取输出格式 */
 export type AudioFormat = 'm4a' | 'mp3' | 'opus'
@@ -654,6 +655,12 @@ export interface AppSettings {
   lanRemoteEnabled: boolean
   /** 局域网 HTTP 服务端口，默认 17890 */
   lanPort: number
+  /**
+   * 局域网服务监听地址：
+   * - `0.0.0.0`：局域网可达（默认，兼容现有远程访问）
+   * - `127.0.0.1`：仅本机
+   */
+  lanBindHost: '0.0.0.0' | '127.0.0.1'
   /** 远程访问用户名，默认 admin */
   lanUsername: string
   /** 远程访问密码 scrypt 哈希（含 salt），勿存明文 */
@@ -667,6 +674,8 @@ export interface LanStatus {
   /** HTTP 服务是否正在监听 */
   running: boolean
   port: number
+  /** 当前监听地址（如 0.0.0.0 / 127.0.0.1） */
+  bindHost: '0.0.0.0' | '127.0.0.1'
   username: string
   /** 是否已设置密码 */
   hasPassword: boolean
@@ -699,6 +708,8 @@ export interface LanTaskView {
 export interface LanRemoteConfigInput {
   enabled?: boolean
   port?: number
+  /** 监听地址：0.0.0.0=局域网；127.0.0.1=仅本机 */
+  bindHost?: '0.0.0.0' | '127.0.0.1'
   username?: string
   /** 新密码明文；空串表示不修改；仅在此字段出现时更新哈希 */
   password?: string
@@ -748,6 +759,8 @@ export interface ImageProcessResult {
   error?: string
   /** magick 时可选完整命令行 */
   commandLine?: string
+  /** 用户取消（非失败） */
+  cancelled?: boolean
 }
 
 /** 图片引擎选项（UI） */
@@ -1006,7 +1019,8 @@ export const TASK_MODE_OPTIONS: Array<{ value: TaskMode; label: string }> = [
   { value: 'image-crop', label: '图片裁切' },
   { value: 'image-stitch', label: '图片拼接' },
   { value: 'video-concat', label: '视频拼接' },
-  { value: 'media-compose', label: '图+视频' }
+  { value: 'media-compose', label: '图+视频' },
+  { value: 'video-mosaic', label: '视频打码' }
 ]
 
 /** 工具分组（首页模式信息架构） */
@@ -1020,7 +1034,7 @@ export const TOOL_GROUP_OPTIONS: Array<{ value: ToolGroup; label: string }> = [
 
 /** 各工具组下的二级任务模式 */
 export const TOOL_GROUP_MODES: Record<ToolGroup, TaskMode[]> = {
-  video: ['compress', 'audio', 'video-concat'],
+  video: ['compress', 'audio', 'video-concat', 'video-mosaic'],
   image: ['image', 'image-crop', 'image-stitch'],
   compose: ['media-compose']
 }
@@ -1058,6 +1072,9 @@ export const DEFAULT_AUDIO_BITRATE = '192k'
 
 /** 默认音频输出命名模板 */
 export const DEFAULT_AUDIO_NAME_TEMPLATE = '{name}_audio'
+
+/** 默认视频打码输出命名模板 */
+export const DEFAULT_MOSAIC_NAME_TEMPLATE = '{name}_mosaic'
 
 /** 并发数可选值 */
 export const CONCURRENCY_OPTIONS = [1, 2, 3, 4] as const

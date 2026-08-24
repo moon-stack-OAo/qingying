@@ -35,8 +35,8 @@ export default defineConfig({
       }
     }
   },
+  // sandbox:true 时 preload 不能 require 未打包的第三方包；不 externalize，打成单文件（仅保留 electron）
   preload: {
-    plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
         input: {

@@ -7,9 +7,18 @@ import {
   formatMagickCommandLine
 } from '../../../shared/imageLogic'
 import { resolveMagickPath } from './bin'
+import {
+  ImageCancelledError,
+  isCancelled,
+  isImageCancelledError,
+  killChildProcess,
+  removeIncompleteOutput,
+  type TaskCancelSignal
+} from './cancel'
 
 export async function processWithMagick(
-  options: ImageProcessOptions
+  options: ImageProcessOptions,
+  signal?: TaskCancelSignal
 ): Promise<ImageProcessResult> {
   const magickPath = resolveMagickPath()
   if (!magickPath) {
@@ -38,6 +47,10 @@ export async function processWithMagick(
   }
   if (!fs.existsSync(inputPath)) {
     return { ok: false, engine: 'imagemagick', error: '输入文件不存在' }
+  }
+
+  if (isCancelled(signal)) {
+    return { ok: false, engine: 'imagemagick', error: '已取消', cancelled: true }
   }
 
   // 输出扩展名随 format 调整（keep 则沿用用户给定 outputPath）
@@ -69,13 +82,34 @@ export async function processWithMagick(
   const commandLine = formatMagickCommandLine(magickPath, args)
 
   try {
-    await runMagick(magickPath, args)
+    await runMagick(magickPath, args, signal)
   } catch (err) {
+    if (isImageCancelledError(err) || isCancelled(signal)) {
+      removeIncompleteOutput(finalOutput)
+      return {
+        ok: false,
+        engine: 'imagemagick',
+        error: '已取消',
+        cancelled: true,
+        commandLine
+      }
+    }
     const message = err instanceof Error ? err.message : String(err)
     return {
       ok: false,
       engine: 'imagemagick',
       error: message || 'ImageMagick 处理失败',
+      commandLine
+    }
+  }
+
+  if (isCancelled(signal)) {
+    removeIncompleteOutput(finalOutput)
+    return {
+      ok: false,
+      engine: 'imagemagick',
+      error: '已取消',
+      cancelled: true,
       commandLine
     }
   }
@@ -117,26 +151,62 @@ export async function processWithMagick(
   }
 }
 
-function runMagick(bin: string, args: string[]): Promise<void> {
+function runMagick(
+  bin: string,
+  args: string[],
+  signal?: TaskCancelSignal
+): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (isCancelled(signal)) {
+      reject(new ImageCancelledError())
+      return
+    }
+
     const child = spawn(bin, args, {
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe']
     })
     let stderr = ''
+    let settled = false
+
+    const cancelChecker = setInterval(() => {
+      if (signal?.cancelled && child && !child.killed) {
+        killChildProcess(child)
+      }
+    }, 300)
+
+    const finish = (fn: () => void): void => {
+      if (settled) return
+      settled = true
+      clearInterval(cancelChecker)
+      fn()
+    }
+
     child.stderr?.on('data', (chunk: Buffer | string) => {
       stderr += chunk.toString()
     })
     child.on('error', (err) => {
-      reject(err)
+      finish(() => {
+        if (isCancelled(signal)) {
+          reject(new ImageCancelledError())
+          return
+        }
+        reject(err)
+      })
     })
     child.on('close', (code) => {
-      if (code === 0) {
-        resolve()
-        return
-      }
-      const detail = stderr.trim() || `exit code ${code}`
-      reject(new Error(detail))
+      finish(() => {
+        if (isCancelled(signal)) {
+          reject(new ImageCancelledError())
+          return
+        }
+        if (code === 0) {
+          resolve()
+          return
+        }
+        const detail = stderr.trim() || `exit code ${code}`
+        reject(new Error(detail))
+      })
     })
   })
 }

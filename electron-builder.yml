@@ -45,11 +45,12 @@ win:
       arch:
         - x64
   artifactName: qingying-${version}-win-${arch}.${ext}
-  # 代码签名占位（有证书时再启用，勿在无证书 CI 强制签名）
-  # sign: path/to/sign-tool-or-custom-script
-  # certificateFile: path/to/cert.pfx
-  # certificatePassword: ${env.WIN_CSC_KEY_PASSWORD}
-  # signingHashAlgorithms: [sha256]
+  # 代码签名：勿在 yml 写死证书路径/密码；由环境变量驱动（见 docs/RELEASE.md）
+  # 常用：CSC_LINK（或 WIN_CSC_LINK）、CSC_KEY_PASSWORD（或 WIN_CSC_KEY_PASSWORD）
+  # 可选：CSC_NAME（指定证书主题名）、signingHashAlgorithms
+  # 无证书时 CI 设 CSC_IDENTITY_AUTO_DISCOVERY=false，跳过签名且不失败
+  signingHashAlgorithms:
+    - sha256
 mac:
   icon: build/icon.png
   # 与 Windows 一致使用 ASCII 产物名，避免中文路径问题
@@ -65,12 +66,14 @@ mac:
         - arm64
   artifactName: qingying-${version}-mac-${arch}.${ext}
   category: public.app-category.video
-  # 签名/公证占位（有 Apple Developer 证书时再配置；无证书时保持不强制）
-  # identity: "Developer ID Application: Your Name (TEAMID)"
+  # 签名/公证：证书就绪后再启用下列项（当前关闭，避免无证书 CI 失败）
+  # 详见 docs/RELEASE.md「启用签名检查清单」
+  # identity: "Developer ID Application: Your Name (TEAMID)"  # 或依赖 CSC_LINK / 钥匙串 + CSC_NAME
   # hardenedRuntime: true
   # gatekeeperAssess: false
   # entitlements: build/entitlements.mac.plist
   # entitlementsInherit: build/entitlements.mac.plist
+  # 公证环境变量：APPLE_ID、APPLE_APP_SPECIFIC_PASSWORD、APPLE_TEAM_ID（勿写入仓库）
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

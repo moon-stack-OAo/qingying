@@ -410,12 +410,19 @@ export class TaskQueue {
       background: imgOpts.background
     }
 
-    const r = await processImage(processOpts)
+    // 将队列取消信号传入引擎，Magick 可硬杀；Sharp 在检查点响应
+    const r = await processImage(processOpts, signal)
 
-    if (signal.cancelled) {
+    if (signal.cancelled || r.cancelled) {
       this.emitResult(
         task,
-        { code: -1, error: '已取消', inputSize: task.inputSize },
+        {
+          code: -1,
+          error: '已取消',
+          inputSize: task.inputSize,
+          resolvedEncoder: r.engine,
+          commandLine: r.commandLine
+        },
         signal
       )
       return
@@ -496,7 +503,23 @@ export class TaskQueue {
         return
       }
 
-      // 现有 compress / audio（crop 已在 buildVideoFilter 中）
+      // compress / audio / video-mosaic（crop、mosaics 已在 buildVideoFilter 中）
+      if (mode === 'video-mosaic') {
+        const regions = task.options?.mosaics
+        if (!Array.isArray(regions) || regions.length < 1) {
+          this.emitResult(
+            task,
+            {
+              code: 1,
+              error: '请先编辑并设置至少一个打码区域',
+              inputSize: task.inputSize
+            },
+            signal
+          )
+          return
+        }
+      }
+
       const isAudio = mode === 'audio'
       let detect = null
       if (!isAudio) {

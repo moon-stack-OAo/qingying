@@ -15,10 +15,33 @@ import { IpcChannels } from '../../shared/types'
 
 type DroppedFile = { path: string; name: string }
 
+/**
+ * 是否开发环境。
+ * sandbox 下仍有有限 process.env；优先用构建期注入的 MODE（SSR 构建里 DEV 标志不可靠）。
+ */
+function isDevEnv(): boolean {
+  try {
+    const mode = (import.meta as ImportMeta & { env?: { MODE?: string } }).env
+    if (mode?.MODE) return mode.MODE !== 'production'
+  } catch {
+    // ignore
+  }
+  // sandbox 仍提供 process.env
+  return typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production'
+}
+
 function baseName(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/')
   const parts = normalized.split('/')
   return parts[parts.length - 1] || filePath
+}
+
+/** 生产环境仅输出数量与 basename，避免泄露完整路径 */
+function summarizeDroppedFiles(files: DroppedFile[]): { count: number; names: string[] } {
+  return {
+    count: files.length,
+    names: files.map((f) => f.name || baseName(f.path))
+  }
 }
 
 /** file:///C:/a/b.mp4 或 file:///C%3A/... → Windows 本地路径 */
@@ -149,7 +172,12 @@ function extractDroppedFiles(dt: DataTransfer | null): DroppedFile[] {
     }
   }
 
-  console.log('[preload] drop resolved files:', result.length, result)
+  if (isDevEnv()) {
+    console.log('[preload] drop resolved files:', result.length, result)
+  } else {
+    const summary = summarizeDroppedFiles(result)
+    console.log('[preload] drop resolved files:', summary.count, summary.names)
+  }
   return result
 }
 
@@ -181,14 +209,16 @@ function installDropCapture(): void {
       return
     }
 
-    console.log(
-      '[preload] drop event types=',
-      Array.from(dt.types || []),
-      'files=',
-      dt.files?.length,
-      'items=',
-      dt.items?.length
-    )
+    if (isDevEnv()) {
+      console.log(
+        '[preload] drop event types=',
+        Array.from(dt.types || []),
+        'files=',
+        dt.files?.length,
+        'items=',
+        dt.items?.length
+      )
+    }
 
     const files = extractDroppedFiles(dt)
     forwardDroppedFiles(files)
@@ -201,7 +231,9 @@ function installDropCapture(): void {
     document.addEventListener('dragenter', onDragOver, true)
     document.addEventListener('dragover', onDragOver, true)
     document.addEventListener('drop', onDrop, true)
-    console.log('[preload] drop capture installed')
+    if (isDevEnv()) {
+      console.log('[preload] drop capture installed')
+    }
   }
 
   if (typeof document === 'undefined') return

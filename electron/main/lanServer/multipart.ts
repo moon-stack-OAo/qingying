@@ -30,8 +30,49 @@ export function parseBoundary(contentType: string | undefined): string | null {
   return m[1] || m[2] || null
 }
 
+/** 去掉路径穿越与危险字符，仅保留文件名 */
+export function sanitizeFileName(name: string): string {
+  const base = path.basename(name.replace(/\\/g, '/'))
+  const cleaned = base.replace(/[<>:"|?*\x00-\x1f]/g, '_').trim()
+  if (!cleaned || cleaned === '.' || cleaned === '..') {
+    return 'upload.bin'
+  }
+  if (cleaned.length > 180) {
+    const ext = path.extname(cleaned)
+    const stem = cleaned.slice(0, 180 - ext.length)
+    return stem + ext
+  }
+  return cleaned
+}
+
+function safeUnlink(p: string): void {
+  try {
+    if (p && fs.existsSync(p)) fs.unlinkSync(p)
+  } catch {
+    // ignore
+  }
+}
+
+function parsePartHeaders(headerText: string): {
+  fieldName: string
+  fileName: string | null
+  mimeType: string
+} | null {
+  const disp = /Content-Disposition:\s*form-data;\s*(.+)/i.exec(headerText)
+  if (!disp) return null
+  const nameMatch = /name="([^"]+)"/i.exec(disp[1])
+  if (!nameMatch) return null
+  const fieldName = nameMatch[1]
+  const fileMatch = /filename="([^"]*)"/i.exec(disp[1])
+  const mimeMatch = /Content-Type:\s*([^\r\n]+)/i.exec(headerText)
+  const mimeType = mimeMatch ? mimeMatch[1].trim() : 'application/octet-stream'
+  const fileName =
+    fileMatch && fileMatch[1] !== undefined ? fileMatch[1] : null
+  return { fieldName, fileName, mimeType }
+}
+
 /**
- * 简易 multipart/form-data 解析（流式写盘，避免大文件占内存）
+ * 简易 multipart/form-data 流式解析：边读边写盘，不把整包 body 拼进内存
  * 仅支持常见浏览器上传形态
  */
 export async function parseMultipart(
@@ -47,12 +88,304 @@ export async function parseMultipart(
     throw new Error('缺少 multipart boundary')
   }
 
+  const contentLength = req.headers['content-length']
+  if (typeof contentLength === 'string') {
+    const n = Number(contentLength)
+    if (Number.isFinite(n) && n > maxBytes) {
+      req.resume()
+      throw new Error(`上传超过上限 ${Math.floor(maxBytes / (1024 * 1024))}MB`)
+    }
+  }
+
   if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true })
   }
 
-  const raw = await readBodyWithLimit(req, maxBytes)
-  return parseMultipartBuffer(raw, boundary, uploadDir)
+  return parseMultipartStream(req, boundary, uploadDir, maxBytes)
+}
+
+type Phase = 'open' | 'headers' | 'body' | 'after-boundary' | 'done'
+
+type ActivePart = {
+  fieldName: string
+  fileName: string | null
+  mimeType: string
+  isFile: boolean
+  tempPath: string
+  writeStream: fs.WriteStream | null
+  size: number
+  fieldChunks: Buffer[]
+}
+
+/**
+ * 按 chunk 状态机解析 multipart；文件部分直接落盘
+ * 导出供单测注入 Readable
+ */
+export function parseMultipartStream(
+  stream: Readable,
+  boundary: string,
+  uploadDir: string,
+  maxBytes = MAX_UPLOAD_BYTES
+): Promise<MultipartResult> {
+  // 形态：--boundary\r\n headers \r\n\r\n body \r\n--boundary\r\n ... --boundary--
+  const openBoundary = Buffer.from(`--${boundary}`)
+  const closeBoundary = Buffer.from(`\r\n--${boundary}`)
+  const crlfHeaders = Buffer.from('\r\n\r\n')
+  const holdBack = closeBoundary.length
+
+  const fields: Record<string, string> = {}
+  const files: MultipartFile[] = []
+  const tempPaths: string[] = []
+
+  let totalBytes = 0
+  let buffer = Buffer.alloc(0)
+  let phase: Phase = 'open'
+  let part: ActivePart | null = null
+
+  const limitError = (): Error =>
+    new Error(`上传超过上限 ${Math.floor(maxBytes / (1024 * 1024))}MB`)
+
+  const cleanupTemps = (): void => {
+    for (const p of tempPaths) safeUnlink(p)
+    tempPaths.length = 0
+  }
+
+  const endWriteStream = (ws: fs.WriteStream | null): Promise<void> =>
+    new Promise((resolve) => {
+      if (!ws || ws.destroyed) {
+        resolve()
+        return
+      }
+      ws.end(() => resolve())
+      ws.once('error', () => resolve())
+    })
+
+  const writeAll = (ws: fs.WriteStream, data: Buffer): Promise<void> =>
+    new Promise((resolve, reject) => {
+      if (data.length === 0) {
+        resolve()
+        return
+      }
+      ws.write(data, (err) => (err ? reject(err) : resolve()))
+    })
+
+  const finishPart = async (body: Buffer): Promise<void> => {
+    if (!part) return
+    if (part.isFile) {
+      if (part.writeStream) {
+        await writeAll(part.writeStream, body)
+        part.size += body.length
+        await endWriteStream(part.writeStream)
+        part.writeStream = null
+      }
+      files.push({
+        fieldName: part.fieldName,
+        fileName: sanitizeFileName(part.fileName || 'upload.bin'),
+        mimeType: part.mimeType,
+        tempPath: part.tempPath,
+        size: part.size
+      })
+    } else {
+      if (body.length > 0) part.fieldChunks.push(body)
+      fields[part.fieldName] = Buffer.concat(part.fieldChunks).toString('utf8')
+    }
+    part = null
+  }
+
+  const appendBody = async (data: Buffer): Promise<void> => {
+    if (!part || data.length === 0) return
+    if (part.isFile) {
+      if (!part.writeStream) throw new Error('写入流未初始化')
+      await writeAll(part.writeStream, data)
+      part.size += data.length
+    } else {
+      part.fieldChunks.push(data)
+    }
+  }
+
+  const beginPart = (headerBuf: Buffer): void => {
+    const parsed = parsePartHeaders(headerBuf.toString('utf8'))
+    if (!parsed) throw new Error('无效的 multipart part 头')
+    const isFile = parsed.fileName !== null
+    let tempPath = ''
+    let writeStream: fs.WriteStream | null = null
+    if (isFile) {
+      const safeBase = sanitizeFileName(parsed.fileName || 'upload.bin')
+      tempPath = path.join(
+        uploadDir,
+        `${Date.now()}-${randomBytes(6).toString('hex')}-${safeBase}`
+      )
+      tempPaths.push(tempPath)
+      writeStream = fs.createWriteStream(tempPath)
+    }
+    part = {
+      fieldName: parsed.fieldName,
+      fileName: parsed.fileName,
+      mimeType: parsed.mimeType,
+      isFile,
+      tempPath,
+      writeStream,
+      size: 0,
+      fieldChunks: []
+    }
+  }
+
+  /** 处理已读到的 `--boundary` 之后的后缀（`--` 结束 或 `\r\n` 下一 part） */
+  const handleAfterBoundary = (): 'need-more' | 'continue' | 'done' => {
+    if (buffer.length < 2) return 'need-more'
+    if (buffer[0] === 0x2d && buffer[1] === 0x2d) {
+      phase = 'done'
+      buffer = Buffer.alloc(0)
+      return 'done'
+    }
+    if (buffer[0] === 0x0d && buffer[1] === 0x0a) {
+      buffer = buffer.subarray(2)
+      phase = 'headers'
+      return 'continue'
+    }
+    throw new Error('multipart 分隔符后格式无效')
+  }
+
+  /**
+   * 尽量消费 buffer；返回是否已结束
+   */
+  const consume = async (): Promise<boolean> => {
+    while (phase !== 'done') {
+      if (phase === 'open') {
+        const idx = buffer.indexOf(openBoundary)
+        if (idx < 0) {
+          if (buffer.length > openBoundary.length) {
+            buffer = buffer.subarray(buffer.length - openBoundary.length)
+          }
+          return false
+        }
+        buffer = buffer.subarray(idx + openBoundary.length)
+        phase = 'after-boundary'
+        continue
+      }
+
+      if (phase === 'after-boundary') {
+        const r = handleAfterBoundary()
+        if (r === 'need-more') return false
+        if (r === 'done') return true
+        continue
+      }
+
+      if (phase === 'headers') {
+        const headerEnd = buffer.indexOf(crlfHeaders)
+        if (headerEnd < 0) {
+          if (buffer.length > 64 * 1024) {
+            throw new Error('multipart 头部过大')
+          }
+          return false
+        }
+        const headerBuf = buffer.subarray(0, headerEnd)
+        buffer = buffer.subarray(headerEnd + 4)
+        beginPart(headerBuf)
+        phase = 'body'
+        continue
+      }
+
+      if (phase === 'body') {
+        const idx = buffer.indexOf(closeBoundary)
+        if (idx < 0) {
+          if (buffer.length > holdBack) {
+            const flush = buffer.subarray(0, buffer.length - holdBack)
+            buffer = buffer.subarray(buffer.length - holdBack)
+            await appendBody(flush)
+          }
+          return false
+        }
+        const bodyChunk = buffer.subarray(0, idx)
+        buffer = buffer.subarray(idx + closeBoundary.length)
+        await finishPart(bodyChunk)
+        phase = 'after-boundary'
+        continue
+      }
+
+      return false
+    }
+    return true
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let chain: Promise<void> = Promise.resolve()
+
+    const fail = (err: Error): void => {
+      if (settled) return
+      settled = true
+      stream.destroy()
+      const ws = part?.writeStream ?? null
+      part = null
+      void endWriteStream(ws).then(() => {
+        cleanupTemps()
+        reject(err)
+      })
+    }
+
+    const succeed = (): void => {
+      if (settled) return
+      settled = true
+      const keep = new Set(files.map((f) => f.tempPath))
+      for (let i = tempPaths.length - 1; i >= 0; i--) {
+        if (keep.has(tempPaths[i])) tempPaths.splice(i, 1)
+      }
+      cleanupTemps()
+      resolve({ fields, files })
+    }
+
+    stream.on('data', (chunk: Buffer | string) => {
+      if (settled) return
+      const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+      totalBytes += buf.length
+      if (totalBytes > maxBytes) {
+        fail(limitError())
+        return
+      }
+      chain = chain
+        .then(async () => {
+          if (settled) return
+          buffer = Buffer.concat([buffer, buf])
+          if (await consume()) succeed()
+        })
+        .catch((e: unknown) => {
+          fail(e instanceof Error ? e : new Error(String(e)))
+        })
+    })
+
+    stream.on('end', () => {
+      chain = chain
+        .then(async () => {
+          if (settled) return
+          if (await consume()) {
+            succeed()
+            return
+          }
+          // 流结束仍在 body：把剩余当作最后 part（无收尾 boundary 的宽松处理）
+          if (phase === 'body' && part) {
+            await finishPart(buffer)
+            buffer = Buffer.alloc(0)
+            phase = 'done'
+            succeed()
+            return
+          }
+          if (files.length > 0 || Object.keys(fields).length > 0) {
+            phase = 'done'
+            succeed()
+            return
+          }
+          throw new Error('multipart 数据不完整')
+        })
+        .catch((e: unknown) => {
+          fail(e instanceof Error ? e : new Error(String(e)))
+        })
+    })
+
+    stream.on('error', (err) => {
+      fail(err instanceof Error ? err : new Error(String(err)))
+    })
+  })
 }
 
 function readBodyWithLimit(
@@ -72,7 +405,9 @@ function readBodyWithLimit(
         aborted = true
         req.removeListener('data', onData)
         req.destroy()
-        reject(new Error(`上传超过上限 ${Math.floor(maxBytes / (1024 * 1024))}MB`))
+        reject(
+          new Error(`上传超过上限 ${Math.floor(maxBytes / (1024 * 1024))}MB`)
+        )
         return
       }
       chunks.push(buf)
@@ -89,132 +424,8 @@ function readBodyWithLimit(
   })
 }
 
-function parseMultipartBuffer(
-  body: Buffer,
-  boundary: string,
-  uploadDir: string
-): MultipartResult {
-  const fields: Record<string, string> = {}
-  const files: MultipartFile[] = []
-  const delim = Buffer.from(`--${boundary}`)
-  const parts = splitByBoundary(body, delim)
-
-  for (const part of parts) {
-    if (part.length === 0) continue
-    // 末尾 -- 结束标记
-    if (part.length <= 4 && part.toString('utf8').trim() === '--') continue
-
-    const headerEnd = indexOfDoubleCrlf(part)
-    if (headerEnd < 0) continue
-    const headerBuf = part.subarray(0, headerEnd)
-    // 去掉头部后的 \r\n\r\n，内容末尾可能带 \r\n
-    let content = part.subarray(headerEnd + 4)
-    if (
-      content.length >= 2 &&
-      content[content.length - 2] === 0x0d &&
-      content[content.length - 1] === 0x0a
-    ) {
-      content = content.subarray(0, content.length - 2)
-    }
-
-    const headers = headerBuf.toString('utf8')
-    const disp = /Content-Disposition:\s*form-data;\s*(.+)/i.exec(headers)
-    if (!disp) continue
-    const nameMatch = /name="([^"]+)"/i.exec(disp[1])
-    if (!nameMatch) continue
-    const fieldName = nameMatch[1]
-    const fileMatch = /filename="([^"]*)"/i.exec(disp[1])
-    const mimeMatch = /Content-Type:\s*([^\r\n]+)/i.exec(headers)
-    const mimeType = mimeMatch ? mimeMatch[1].trim() : 'application/octet-stream'
-
-    if (fileMatch && fileMatch[1] !== undefined) {
-      const originalName = fileMatch[1] || 'upload.bin'
-      // 空文件名视为无文件
-      if (!originalName || originalName === 'upload.bin' && content.length === 0) {
-        // 仍允许空文件名但有内容
-      }
-      if (!originalName) continue
-      const safeBase = sanitizeFileName(originalName)
-      const tempName = `${Date.now()}-${randomBytes(6).toString('hex')}-${safeBase}`
-      const tempPath = path.join(uploadDir, tempName)
-      fs.writeFileSync(tempPath, content)
-      files.push({
-        fieldName,
-        fileName: safeBase,
-        mimeType,
-        tempPath,
-        size: content.length
-      })
-    } else {
-      fields[fieldName] = content.toString('utf8')
-    }
-  }
-
-  return { fields, files }
-}
-
-function splitByBoundary(body: Buffer, delim: Buffer): Buffer[] {
-  const parts: Buffer[] = []
-  let start = 0
-  // 跳过前导
-  const first = body.indexOf(delim)
-  if (first < 0) return parts
-  start = first + delim.length
-  // 跳过 boundary 后的 \r\n
-  if (body[start] === 0x0d && body[start + 1] === 0x0a) start += 2
-
-  while (start < body.length) {
-    const next = body.indexOf(delim, start)
-    if (next < 0) {
-      parts.push(body.subarray(start))
-      break
-    }
-    // part 内容在 start..next，前有可能是 \r\n--
-    let end = next
-    if (end >= 2 && body[end - 2] === 0x0d && body[end - 1] === 0x0a) {
-      end -= 2
-    }
-    parts.push(body.subarray(start, end))
-    start = next + delim.length
-    // -- 表示结束
-    if (body[start] === 0x2d && body[start + 1] === 0x2d) break
-    if (body[start] === 0x0d && body[start + 1] === 0x0a) start += 2
-  }
-  return parts
-}
-
-function indexOfDoubleCrlf(buf: Buffer): number {
-  for (let i = 0; i < buf.length - 3; i++) {
-    if (
-      buf[i] === 0x0d &&
-      buf[i + 1] === 0x0a &&
-      buf[i + 2] === 0x0d &&
-      buf[i + 3] === 0x0a
-    ) {
-      return i
-    }
-  }
-  return -1
-}
-
-/** 去掉路径穿越与危险字符，仅保留文件名 */
-export function sanitizeFileName(name: string): string {
-  const base = path.basename(name.replace(/\\/g, '/'))
-  const cleaned = base.replace(/[<>:"|?*\x00-\x1f]/g, '_').trim()
-  if (!cleaned || cleaned === '.' || cleaned === '..') {
-    return 'upload.bin'
-  }
-  // 限制长度
-  if (cleaned.length > 180) {
-    const ext = path.extname(cleaned)
-    const stem = cleaned.slice(0, 180 - ext.length)
-    return stem + ext
-  }
-  return cleaned
-}
-
 /**
- * 读取 JSON body（有上限）
+ * 读取 JSON body（有上限；小请求仍整包缓冲）
  */
 export async function readJsonBody(
   req: IncomingMessage,
@@ -229,7 +440,7 @@ export async function readJsonBody(
   }
 }
 
-/** 将可读流写入文件（供后续流式优化预留） */
+/** 将可读流写入文件 */
 export function streamToFile(
   stream: Readable,
   filePath: string

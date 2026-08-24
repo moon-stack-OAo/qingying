@@ -72,8 +72,16 @@ export function normalizeTaskForRestore(
   }
 
   const options = isObject(raw.options)
-    ? (raw.options as unknown as CompressOptions)
+    ? ({ ...(raw.options as unknown as CompressOptions) } as CompressOptions)
     : ({} as CompressOptions)
+
+  // 不兼容旧 compress 任务上的打码：恢复时直接剥离 mosaics
+  if (
+    (options.mode == null || options.mode === 'compress') &&
+    options.mosaics
+  ) {
+    delete options.mosaics
+  }
 
   const task: CompressTask = {
     id,

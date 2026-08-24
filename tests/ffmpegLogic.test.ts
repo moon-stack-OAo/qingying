@@ -16,6 +16,7 @@ import {
   buildWatermarkOverlayExpr,
   effectiveDuration,
   escapeDrawtext,
+  sanitizeDrawtextFontColor,
   escapeFilterPath,
   estimateEtaSec,
   estimateVideoBitrateKbps,
@@ -551,6 +552,36 @@ describe('buildCompressArgs', () => {
 describe('watermark helpers', () => {
   it('escapeDrawtext 转义特殊字符', () => {
     expect(escapeDrawtext(`a:b'c%d\\e`)).toBe(`a\\:b\\'c\\%d\\\\e`)
+  })
+
+  it('sanitizeDrawtextFontColor 白名单与非法回退', () => {
+    expect(sanitizeDrawtextFontColor('white')).toBe('white')
+    expect(sanitizeDrawtextFontColor('Red')).toBe('red')
+    expect(sanitizeDrawtextFontColor('#fff')).toBe('#fff')
+    expect(sanitizeDrawtextFontColor('#FF00AA')).toBe('#ff00aa')
+    expect(sanitizeDrawtextFontColor('#ff00aaff')).toBe('#ff00aaff')
+    expect(sanitizeDrawtextFontColor('0xRRGGBB')).toBe('white')
+    expect(sanitizeDrawtextFontColor('0x00FF00')).toBe('0x00ff00')
+    expect(sanitizeDrawtextFontColor('yellow@0.5')).toBe('yellow')
+    expect(sanitizeDrawtextFontColor("red':x=0:enable='1")).toBe('white')
+    expect(sanitizeDrawtextFontColor('rgb(255,0,0)')).toBe('white')
+    expect(sanitizeDrawtextFontColor('')).toBe('white')
+    expect(sanitizeDrawtextFontColor(null)).toBe('white')
+  })
+
+  it('planVideoFilters 非法 fontColor 不进入 filter', () => {
+    const plan = planVideoFilters(
+      baseOptions({
+        watermark: {
+          mode: 'text',
+          text: 'safe',
+          fontColor: "evil':fontsize=1:enable='1"
+        }
+      })
+    )
+    expect(plan.vf).toContain('fontcolor=white@')
+    expect(plan.vf).not.toContain('evil')
+    expect(plan.vf).not.toContain("enable='1")
   })
 
   it('escapeFilterPath Windows 路径', () => {
@@ -1310,6 +1341,18 @@ describe('buildOutputPath / suggestUniqueOutputPath', () => {
       })
     )
     expect(path.basename(out)).toBe('part1_concat.mp4')
+  })
+
+  it('mode=video-mosaic 默认模板 _mosaic', () => {
+    const out = buildOutputPath(
+      path.join('D:', 'videos', 'demo.mp4'),
+      baseOptions({
+        mode: 'video-mosaic',
+        format: 'mp4',
+        outputDir: path.join('D:', 'out')
+      })
+    )
+    expect(path.basename(out)).toBe('demo_mosaic.mp4')
   })
 })
 

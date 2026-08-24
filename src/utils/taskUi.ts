@@ -43,6 +43,8 @@ export function modeLabel(mode?: TaskMode | null): string {
       return '拼接'
     case 'media-compose':
       return '图+视频'
+    case 'video-mosaic':
+      return '打码'
     case 'compress':
     default:
       return '压缩'
@@ -158,6 +160,16 @@ export function optionsSummary(task: CompressTask): string {
     if (c?.overlay?.imagePath) {
       parts.push('叠加图: 有')
     }
+  } else if (mode === 'video-mosaic') {
+    parts.push('模式: 视频打码')
+    parts.push(`CRF: ${o.crf}`)
+    parts.push(`格式: ${o.format}`)
+    parts.push(`编码器: ${o.encoder}`)
+    if (o.mosaics?.length) {
+      parts.push(`打码区域: ${o.mosaics.length} 个`)
+    } else {
+      parts.push('打码区域: 未设置')
+    }
   } else {
     parts.push(`预设: ${o.presetId}`)
     parts.push(`CRF: ${o.crf}`)
@@ -198,9 +210,6 @@ export function optionsSummary(task: CompressTask): string {
     if (o.encodePreset === 'slow') parts.push('编码速度: 高质量')
     if (o.crop && o.crop.w > 0 && o.crop.h > 0) {
       parts.push(`画面裁切: ${o.crop.w}×${o.crop.h}@${o.crop.x},${o.crop.y}`)
-    }
-    if (o.mosaics?.length) {
-      parts.push(`打码区域: ${o.mosaics.length} 个`)
     }
   }
 

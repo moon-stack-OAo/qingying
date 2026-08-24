@@ -19,6 +19,7 @@ import DropZone from './components/DropZone.vue'
 import CloseConfirmDialog from './components/CloseConfirmDialog.vue'
 import SettingsDrawer from './components/SettingsDrawer.vue'
 import ShortcutHelpDialog from './components/ShortcutHelpDialog.vue'
+import MosaicWorkbench from './components/MosaicWorkbench.vue'
 import SizeSummaryBar from './components/SizeSummaryBar.vue'
 import TaskTable from './components/TaskTable.vue'
 import UpdateDialog from './components/UpdateDialog.vue'
@@ -86,6 +87,7 @@ const {
   isImageMode,
   isVideoConcatMode,
   isMediaComposeMode,
+  isVideoMosaicMode,
   isVideoCompressMode,
   imageFormat,
   imageQuality,
@@ -369,44 +371,77 @@ const cropComposeWarningText = computed(
   () => `当前裁切/混剪参数将应用于全部 ${pendingCount.value} 个待处理任务`
 )
 
-/** 打码规则仅属于当前选中的单个视频任务，不参与全局选项同步。 */
+/** 打码规则仅属于 video-mosaic 模式下的当前任务，不参与全局选项同步。 */
 const mosaicDialogOpen = ref(false)
+
+/** 打码单页：当前唯一任务（无列表时仍复用 useTasks 选中项） */
+const mosaicTask = computed(() => {
+  if (!isVideoMosaicMode.value) return null
+  return selectedTask.value || tasks.value[0] || null
+})
+
 const mosaicEditable = computed(() => {
-  const task = selectedTask.value
+  if (taskMode.value !== 'video-mosaic') return false
+  const task = mosaicTask.value
+  // 运行中 / 排队中不可改区域；其余状态均可编辑
   return !!(
     task &&
-    (task.status === 'pending' || task.status === 'failed') &&
-    task.options?.mode !== 'audio' &&
-    task.options?.mode !== 'image' &&
-    task.options?.mode !== 'image-crop' &&
-    task.options?.mode !== 'image-stitch' &&
-    task.options?.mode !== 'video-concat' &&
-    task.options?.mode !== 'media-compose' &&
-    task.inputPath
+    task.inputPath &&
+    task.status !== 'running' &&
+    task.status !== 'queued'
   )
 })
 const mosaicVideoPath = computed(() =>
-  mosaicEditable.value ? selectedTask.value?.inputPath || '' : ''
+  mosaicEditable.value ? mosaicTask.value?.inputPath || '' : ''
 )
 const mosaicRegions = computed<MosaicRegion[]>(() =>
-  selectedTask.value?.options?.mosaics || []
+  mosaicTask.value?.options?.mosaics || []
 )
+const mosaicRegionCount = computed(() => mosaicRegions.value.length)
 
 function openMosaicEditor(): void {
+  if (taskMode.value !== 'video-mosaic') {
+    ElMessage.warning('请先切换到「视频打码」模式')
+    return
+  }
   if (!mosaicEditable.value) {
-    ElMessage.warning('请先选中一个待处理的视频压缩任务')
+    ElMessage.warning(
+      mosaicTask.value
+        ? '处理进行中，请先取消后再编辑打码区域'
+        : '请先添加视频'
+    )
     return
   }
   mosaicDialogOpen.value = true
 }
 
 function onMosaicConfirm(regions: MosaicRegion[]): void {
-  const task = selectedTask.value
+  const task = mosaicTask.value
   if (!task || !mosaicEditable.value) return
+  // 已完成任务改区域后回到待处理，便于重新导出
+  if (task.status === 'completed') {
+    updateTask(task.id, {
+      options: { ...task.options, mosaics: regions },
+      outputPath: '',
+      status: 'pending',
+      progress: 0,
+      error: undefined,
+      outputSize: undefined
+    })
+    return
+  }
   updateTask(task.id, {
     options: { ...task.options, mosaics: regions },
     outputPath: ''
   })
+}
+
+/** 清除 / 换视频：运行中先取消再移除；顺带清掉残留任务 */
+function onMosaicClear(): void {
+  const ids = tasks.value.map((t) => t.id)
+  for (const id of ids) {
+    removeOne(id)
+  }
 }
 
 /** 可视化裁切预览：优先选中任务，否则第一个 pending/failed */
@@ -535,7 +570,7 @@ async function onSelectComposeOverlayImageUi(): Promise<void> {
   afterCropComposeEdit()
 }
 
-/** 模式切换守卫：不匹配的 pending/failed 需确认移除 */
+/** 模式切换守卫：不匹配的 pending/failed 需确认移除；打码模式仅保留单个任务 */
 async function handleTaskModeChange(mode: TaskMode): Promise<void> {
   if (mode === taskMode.value) return
   const n = getMismatchedPendingCount(mode)
@@ -554,6 +589,40 @@ async function handleTaskModeChange(mode: TaskMode): Promise<void> {
       return
     }
     removeMismatchedPending(mode)
+  }
+  if (mode === 'video-mosaic') {
+    if (hasActive.value) {
+      ElMessage.warning('请先取消进行中的任务再切换到打码模式')
+      return
+    }
+    const keep = tasks.value.filter(
+      (t) => t.status === 'pending' || t.status === 'failed'
+    )
+    if (keep.length > 1) {
+      try {
+        await ElMessageBox.confirm(
+          '打码模式仅支持单个视频，切换后将只保留第一个待处理任务，其余任务将被移除。是否继续？',
+          '切换任务模式',
+          {
+            type: 'warning',
+            confirmButtonText: '保留第一个并切换',
+            cancelButtonText: '取消'
+          }
+        )
+      } catch {
+        return
+      }
+      tasks.value = [keep[0]]
+      selectedTaskId.value = keep[0].id
+    } else if (keep.length === 1) {
+      // 单页流程：去掉已完成等残留，只留唯一待处理视频
+      tasks.value = [keep[0]]
+      selectedTaskId.value = keep[0].id
+    } else {
+      // 无待处理：进入空白打码工作区
+      tasks.value = []
+      selectedTaskId.value = null
+    }
   }
   onTaskModeChange(mode)
 }
@@ -613,6 +682,7 @@ async function refreshLanStatus(): Promise<void> {
 async function onSaveLanConfig(config: {
   enabled?: boolean
   port?: number
+  bindHost?: '0.0.0.0' | '127.0.0.1'
   username?: string
   password?: string
 }): Promise<void> {
@@ -1049,6 +1119,7 @@ async function onResetSettings(): Promise<void> {
         :is-image-mode="isImageMode"
         :is-video-concat-mode="isVideoConcatMode"
         :is-media-compose-mode="isMediaComposeMode"
+        :is-video-mosaic-mode="isVideoMosaicMode"
         :is-video-compress-mode="isVideoCompressMode"
         :is-custom="isCustom"
         :is-webm="isWebm"
@@ -1091,6 +1162,7 @@ async function onResetSettings(): Promise<void> {
         :crop-h="cropH"
         :crop-preview-path="cropPreviewPath"
         :mosaic-editable="mosaicEditable"
+        :mosaic-region-count="mosaicRegionCount"
         :concat-prefer-copy="concatPreferCopy"
         :compose-intro-path="composeIntroPath"
         :compose-intro-duration="composeIntroDuration"
@@ -1185,40 +1257,58 @@ async function onResetSettings(): Promise<void> {
     />
 
     <div class="workspace">
-      <DropZone
-          :compact="tasks.length > 0"
+      <!-- 打码：无任务列表的单页工作台 -->
+      <MosaicWorkbench
+          v-if="isVideoMosaicMode"
+          :task="mosaicTask"
           :dragging="dragging"
-          :task-mode="taskMode"
-          :show-task-edit-hint="pendingCount > 1"
-          @click="onSelectFiles"
-      />
-
-      <SizeSummaryBar
-          :count="sizeSummary.count"
-          :ratio="sizeSummary.ratio"
-          :total-in="sizeSummary.totalIn"
-          :total-out="sizeSummary.totalOut"
-      />
-
-      <TaskTable
-          :has-active="hasActive"
-          :has-pending="hasPending"
-          :tasks="tasks"
-          :selected-task-id="selectedTaskId"
-          @cancel-all="cancelAll"
-          @cancel-one="cancelOne"
-          @clear-all="clearAll"
-          @clear-finished="clearFinished"
-          @open-output="openOutput"
-          @remove-one="removeOne"
-          @select-task="selectTask"
+          :mosaic-region-count="mosaicRegionCount"
+          :mosaic-editable="mosaicEditable"
+          @add="onSelectFiles"
+          @edit-mosaics="openMosaicEditor"
+          @start="startOne"
+          @cancel="cancelOne"
+          @open="openOutput"
           @show-in-folder="showInFolder"
-          @start-all="startAll"
-          @start-one="startOne"
-          @remove-stitch-input="removeStitchInput"
-          @append-stitch-inputs="appendStitchInputs"
-          @reorder-stitch-input="reorderStitchInput"
+          @clear="onMosaicClear"
       />
+
+      <template v-else>
+        <DropZone
+            :compact="tasks.length > 0"
+            :dragging="dragging"
+            :task-mode="taskMode"
+            :show-task-edit-hint="pendingCount > 1"
+            @click="onSelectFiles"
+        />
+
+        <SizeSummaryBar
+            :count="sizeSummary.count"
+            :ratio="sizeSummary.ratio"
+            :total-in="sizeSummary.totalIn"
+            :total-out="sizeSummary.totalOut"
+        />
+
+        <TaskTable
+            :has-active="hasActive"
+            :has-pending="hasPending"
+            :tasks="tasks"
+            :selected-task-id="selectedTaskId"
+            @cancel-all="cancelAll"
+            @cancel-one="cancelOne"
+            @clear-all="clearAll"
+            @clear-finished="clearFinished"
+            @open-output="openOutput"
+            @remove-one="removeOne"
+            @select-task="selectTask"
+            @show-in-folder="showInFolder"
+            @start-all="startAll"
+            @start-one="startOne"
+            @remove-stitch-input="removeStitchInput"
+            @append-stitch-inputs="appendStitchInputs"
+            @reorder-stitch-input="reorderStitchInput"
+        />
+      </template>
     </div>
   </div>
 </template>

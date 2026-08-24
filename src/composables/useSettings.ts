@@ -7,6 +7,7 @@ import {
   DEFAULT_COMPOSE_NAME_TEMPLATE,
   DEFAULT_CONCAT_NAME_TEMPLATE,
   DEFAULT_IMAGE_NAME_TEMPLATE,
+  DEFAULT_MOSAIC_NAME_TEMPLATE,
   DEFAULT_NAME_TEMPLATE,
   type AppSettings,
   type AspectRatioId,
@@ -38,6 +39,7 @@ const BUILTIN_NAME_TEMPLATES = new Set([
   DEFAULT_IMAGE_NAME_TEMPLATE,
   DEFAULT_CONCAT_NAME_TEMPLATE,
   DEFAULT_COMPOSE_NAME_TEMPLATE,
+  DEFAULT_MOSAIC_NAME_TEMPLATE,
   '{name}_{preset}',
   '{name}_{date}'
 ])
@@ -190,6 +192,9 @@ export function useSettings(options: UseSettingsOptions = {}) {
 
   /** 是否为图+视频混剪模式 */
   const isMediaComposeMode = computed(() => taskMode.value === 'media-compose')
+
+  /** 是否为视频打码模式 */
+  const isVideoMosaicMode = computed(() => taskMode.value === 'video-mosaic')
 
   /** 是否显示视频压缩高级选项（CRF/编码器等） */
   const isVideoCompressMode = computed(() => taskMode.value === 'compress')
@@ -476,6 +481,23 @@ export function useSettings(options: UseSettingsOptions = {}) {
       base.compose = compose
     }
 
+    // 视频打码：默认接近原画（对齐 archive），不带目标体积 / 水印 / 裁切
+    if (taskMode.value === 'video-mosaic') {
+      base.presetId = 'archive'
+      base.crf = 18
+      base.maxEdge = 0
+      base.format = 'mp4'
+      delete base.targetSizeMb
+      delete base.twoPass
+      delete base.watermark
+      delete base.crop
+      delete base.scaleMode
+      delete base.outWidth
+      delete base.outHeight
+      delete base.aspectRatio
+      delete base.scalePad
+    }
+
     return base
   }
 
@@ -622,6 +644,7 @@ export function useSettings(options: UseSettingsOptions = {}) {
       s.taskMode === 'image-stitch' ||
       s.taskMode === 'video-concat' ||
       s.taskMode === 'media-compose' ||
+      s.taskMode === 'video-mosaic' ||
       s.taskMode === 'compress'
         ? s.taskMode
         : 'compress'
@@ -850,6 +873,9 @@ export function useSettings(options: UseSettingsOptions = {}) {
         nameTemplateCustom.value = false
       } else if (mode === 'media-compose') {
         nameTemplate.value = DEFAULT_COMPOSE_NAME_TEMPLATE
+        nameTemplateCustom.value = false
+      } else if (mode === 'video-mosaic') {
+        nameTemplate.value = DEFAULT_MOSAIC_NAME_TEMPLATE
         nameTemplateCustom.value = false
       } else if (mode === 'audio') {
         nameTemplate.value = DEFAULT_AUDIO_NAME_TEMPLATE
@@ -1396,6 +1422,7 @@ export function useSettings(options: UseSettingsOptions = {}) {
     isImageMode,
     isVideoConcatMode,
     isMediaComposeMode,
+    isVideoMosaicMode,
     isVideoCompressMode,
     buildOptions,
     loadSettings,

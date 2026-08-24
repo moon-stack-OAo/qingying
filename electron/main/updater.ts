@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import {
   autoUpdater,
   CancellationToken,
@@ -6,6 +6,7 @@ import {
   type UpdateInfo
 } from 'electron-updater'
 import { IpcChannels, type UpdateStatusPayload } from '../../shared/types'
+import { handleFromMainWindow } from './ipcGuard'
 
 let mainWindow: BrowserWindow | null = null
 let initialized = false
@@ -410,23 +411,23 @@ export function getCurrentVersion(): string {
 
 /** 注册更新相关 IPC */
 export function registerUpdaterIpc(): void {
-  ipcMain.handle(IpcChannels.UPDATE_GET_VERSION, async () => {
+  handleFromMainWindow(IpcChannels.UPDATE_GET_VERSION, async () => {
     return { version: app.getVersion(), packaged: app.isPackaged }
   })
 
-  ipcMain.handle(IpcChannels.UPDATE_CHECK, async () => {
+  handleFromMainWindow(IpcChannels.UPDATE_CHECK, async () => {
     return checkForUpdates(true)
   })
 
-  ipcMain.handle(IpcChannels.UPDATE_DOWNLOAD, async () => {
+  handleFromMainWindow(IpcChannels.UPDATE_DOWNLOAD, async () => {
     return downloadUpdate()
   })
 
-  ipcMain.handle(IpcChannels.UPDATE_CANCEL_DOWNLOAD, async () => {
+  handleFromMainWindow(IpcChannels.UPDATE_CANCEL_DOWNLOAD, async () => {
     return cancelUpdateDownload()
   })
 
-  ipcMain.handle(IpcChannels.UPDATE_INSTALL, async () => {
+  handleFromMainWindow(IpcChannels.UPDATE_INSTALL, async () => {
     return quitAndInstall()
   })
 }

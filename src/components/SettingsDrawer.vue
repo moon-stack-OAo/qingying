@@ -69,6 +69,7 @@ const emit = defineEmits<{
     config: {
       enabled?: boolean
       port?: number
+      bindHost?: '0.0.0.0' | '127.0.0.1'
       username?: string
       password?: string
     }
@@ -77,9 +78,13 @@ const emit = defineEmits<{
 
 const activeTab = ref('general')
 
+/** 局域网密码最短长度（与主进程校验一致） */
+const LAN_PASSWORD_MIN_LENGTH = 8
+
 /** 远程访问表单（本地编辑，点保存后提交） */
 const lanEnabled = ref(false)
 const lanPort = ref(17890)
+const lanBindHost = ref<'0.0.0.0' | '127.0.0.1'>('0.0.0.0')
 const lanUsername = ref('admin')
 const lanPassword = ref('')
 const lanPassword2 = ref('')
@@ -89,6 +94,7 @@ function syncLanFormFromProps(): void {
   if (!s) return
   lanEnabled.value = s.enabled
   lanPort.value = s.port || 17890
+  lanBindHost.value = s.bindHost === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0'
   lanUsername.value = s.username || 'admin'
   lanPassword.value = ''
   lanPassword2.value = ''
@@ -124,6 +130,7 @@ function onLanToggle(v: string | number | boolean): void {
   emit('saveLanConfig', {
     enabled,
     port: lanPort.value,
+    bindHost: lanBindHost.value,
     username: lanUsername.value,
     ...(lanPassword.value ? { password: lanPassword.value } : {})
   })
@@ -131,8 +138,8 @@ function onLanToggle(v: string | number | boolean): void {
 
 function onSaveLan(): void {
   if (lanPassword.value || lanPassword2.value) {
-    if (lanPassword.value.length < 4) {
-      ElMessage.warning('密码至少 4 位')
+    if (lanPassword.value.length < LAN_PASSWORD_MIN_LENGTH) {
+      ElMessage.warning(`密码至少 ${LAN_PASSWORD_MIN_LENGTH} 位`)
       return
     }
     if (lanPassword.value !== lanPassword2.value) {
@@ -149,6 +156,7 @@ function onSaveLan(): void {
   emit('saveLanConfig', {
     enabled: lanEnabled.value,
     port,
+    bindHost: lanBindHost.value,
     username: lanUsername.value.trim() || 'admin',
     ...(lanPassword.value ? { password: lanPassword.value } : {})
   })
@@ -252,7 +260,6 @@ function onPathKeydown(e: KeyboardEvent): void {
               :model-value="concurrency"
               size="small"
               class="w-sm"
-              :title="CONCURRENCY_HINT"
               @change="(v: number) => emit('concurrencyChange', v)"
             >
               <el-option
@@ -262,7 +269,7 @@ function onPathKeydown(e: KeyboardEvent): void {
                 :value="n"
               />
             </el-select>
-            <span class="setting-hint" :title="CONCURRENCY_HINT">
+            <span class="setting-hint">
               {{ CONCURRENCY_HINT }}
             </span>
           </div>
@@ -339,15 +346,27 @@ function onPathKeydown(e: KeyboardEvent): void {
           </div>
           <div class="setting-row">
             <span class="setting-label">ffmpeg</span>
-            <span class="setting-value" :title="ffmpegStatus?.ffmpegPath || '内置自动探测'">
-              {{ ffmpegStatus?.ffmpegPath || '内置自动探测' }}
-            </span>
+            <el-tooltip
+              :content="ffmpegStatus?.ffmpegPath || '内置自动探测'"
+              placement="top"
+              :show-after="400"
+            >
+              <span class="tooltip-trigger setting-value">
+                {{ ffmpegStatus?.ffmpegPath || '内置自动探测' }}
+              </span>
+            </el-tooltip>
           </div>
           <div class="setting-row">
             <span class="setting-label">ffprobe</span>
-            <span class="setting-value" :title="ffmpegStatus?.ffprobePath || '内置自动探测'">
-              {{ ffmpegStatus?.ffprobePath || '内置自动探测' }}
-            </span>
+            <el-tooltip
+              :content="ffmpegStatus?.ffprobePath || '内置自动探测'"
+              placement="top"
+              :show-after="400"
+            >
+              <span class="tooltip-trigger setting-value">
+                {{ ffmpegStatus?.ffprobePath || '内置自动探测' }}
+              </span>
+            </el-tooltip>
           </div>
           <div class="setting-row">
             <span class="setting-label">自定义 bin 目录</span>
@@ -414,9 +433,15 @@ function onPathKeydown(e: KeyboardEvent): void {
             class="setting-row"
           >
             <span class="setting-label">magick</span>
-            <span class="setting-value" :title="imageStatus.magickPath">
-              {{ imageStatus.magickPath }}
-            </span>
+            <el-tooltip
+              :content="imageStatus.magickPath"
+              placement="top"
+              :show-after="400"
+            >
+              <span class="tooltip-trigger setting-value">
+                {{ imageStatus.magickPath }}
+              </span>
+            </el-tooltip>
           </div>
           <div
             v-if="imageStatus?.error"
@@ -461,7 +486,8 @@ function onPathKeydown(e: KeyboardEvent): void {
       <el-tab-pane label="远程访问" name="lan" lazy>
         <div class="setting-pane">
           <p class="setting-hint lan-intro">
-            开启后，同一局域网内可用浏览器访问本机服务，登录后上传视频/音频/图片任务并下载结果。编码器、水印、并发、图片引擎等仍使用本机设置。
+            开启后，同一局域网内可用浏览器访问本机服务，登录后上传视频/音频/图片任务并下载结果。编码器、水印、并发、图片引擎等仍使用本机设置。开启等于共享本机处理能力，请设置至少
+            {{ LAN_PASSWORD_MIN_LENGTH }} 位强密码，并仅在受信网络使用。
           </p>
           <div class="setting-row">
             <span class="setting-label">允许远程访问</span>
@@ -488,6 +514,10 @@ function onPathKeydown(e: KeyboardEvent): void {
               }}
             </el-tag>
           </div>
+          <div v-if="lanStatus?.running" class="setting-row">
+            <span class="setting-label">监听地址</span>
+            <span class="setting-value">{{ lanStatus.bindHost }}:{{ lanStatus.port }}</span>
+          </div>
           <div v-if="lanStatus?.error" class="setting-row">
             <span class="setting-label" />
             <span class="setting-error">{{ lanStatus.error }}</span>
@@ -503,6 +533,13 @@ function onPathKeydown(e: KeyboardEvent): void {
               controls-position="right"
               class="w-port"
             />
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">绑定网卡</span>
+            <el-radio-group v-model="lanBindHost" size="small">
+              <el-radio-button value="0.0.0.0">局域网 (0.0.0.0)</el-radio-button>
+              <el-radio-button value="127.0.0.1">仅本机</el-radio-button>
+            </el-radio-group>
           </div>
           <div class="setting-row">
             <span class="setting-label">用户名</span>
@@ -522,7 +559,11 @@ function onPathKeydown(e: KeyboardEvent): void {
               size="small"
               class="bin-dir-input"
               show-password
-              :placeholder="lanStatus?.hasPassword ? '留空则不修改' : '首次开启必填'"
+              :placeholder="
+                lanStatus?.hasPassword
+                  ? '留空则不修改'
+                  : `首次开启必填，至少 ${LAN_PASSWORD_MIN_LENGTH} 位`
+              "
               autocomplete="new-password"
             />
           </div>
@@ -561,20 +602,26 @@ function onPathKeydown(e: KeyboardEvent): void {
           <div v-if="lanStatus?.urls?.length" class="setting-row">
             <span class="setting-label">本机地址</span>
             <div class="lan-urls">
-              <button
+              <el-tooltip
                 v-for="url in lanStatus.urls"
                 :key="url"
-                type="button"
-                class="setting-value path-copy-btn lan-url-btn"
-                :title="'点击复制 ' + url"
-                @click="copyLanUrl(url)"
+                :content="'点击复制 ' + url"
+                placement="top"
+                :show-after="400"
               >
-                {{ url }}
-              </button>
+                <button
+                  type="button"
+                  class="setting-value path-copy-btn lan-url-btn"
+                  @click="copyLanUrl(url)"
+                >
+                  {{ url }}
+                </button>
+              </el-tooltip>
             </div>
           </div>
           <p class="setting-hint">
-            仅建议在受信局域网使用；关闭远程或修改密码将立即清除浏览器会话。
+            安全提示：绑定 0.0.0.0 时局域网设备均可尝试访问；请使用强密码，勿在公共/不可信
+            Wi‑Fi 开启。关闭远程或修改密码将立即清除浏览器会话。
           </p>
         </div>
       </el-tab-pane>
@@ -583,16 +630,25 @@ function onPathKeydown(e: KeyboardEvent): void {
         <div class="setting-pane">
           <div class="setting-row">
             <span class="setting-label">数据目录</span>
-            <button
-              type="button"
-              class="setting-value path-copy-btn"
-              :title="appInfo?.userDataPath ? '点击复制' : ''"
+            <el-tooltip
+              :content="appInfo?.userDataPath ? `点击复制\n${appInfo.userDataPath}` : ''"
+              placement="top"
+              :show-after="400"
               :disabled="!appInfo?.userDataPath"
-              @click="copyUserDataPath"
-              @keydown="onPathKeydown"
+              popper-class="tooltip-pre-line"
             >
-              {{ appInfo?.userDataPath || '—' }}
-            </button>
+              <span class="tooltip-trigger setting-value">
+                <button
+                  type="button"
+                  class="path-copy-btn setting-value"
+                  :disabled="!appInfo?.userDataPath"
+                  @click="copyUserDataPath"
+                  @keydown="onPathKeydown"
+                >
+                  {{ appInfo?.userDataPath || '—' }}
+                </button>
+              </span>
+            </el-tooltip>
           </div>
           <div class="setting-row actions">
             <el-button size="small" @click="emit('openAppData')">打开数据目录</el-button>
@@ -717,6 +773,7 @@ function onPathKeydown(e: KeyboardEvent): void {
 .setting-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   min-height: 28px;
 }
@@ -765,16 +822,24 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .setting-hint {
+  flex: 1 1 12rem;
+  min-width: 0;
   font-size: var(--fs-xs);
   color: var(--app-fg-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.5;
+  white-space: normal;
+  overflow: visible;
+  word-break: break-word;
 }
 
 .setting-error {
+  flex: 1;
+  min-width: 0;
   font-size: var(--fs-sm);
   color: var(--status-bad);
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .bin-dir-input {
@@ -788,9 +853,13 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .lan-intro {
-  white-space: normal;
-  line-height: 1.5;
+  flex: none;
   margin: 0 0 var(--space-1);
+}
+
+p.setting-hint {
+  flex: none;
+  margin: 0;
 }
 
 .w-port {
@@ -807,5 +876,20 @@ function onPathKeydown(e: KeyboardEvent): void {
 
 .lan-url-btn {
   width: 100%;
+}
+
+.tooltip-trigger {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tooltip-trigger.setting-value {
+  flex: 1;
+}
+
+.tooltip-trigger .path-copy-btn {
+  width: 100%;
+  min-width: 0;
 }
 </style>

@@ -84,6 +84,7 @@ function modeTagType(
   if (m === 'image' || m === 'image-crop' || m === 'image-stitch') return 'success'
   if (m === 'video-concat') return 'danger'
   if (m === 'media-compose') return 'warning'
+  if (m === 'video-mosaic') return 'danger'
   return 'info'
 }
 
@@ -203,32 +204,45 @@ function baseName(p: string): string {
       <el-table-column label="文件名" min-width="220">
         <template #default="{ row }">
           <div class="file-cell-row">
-            <button
-              :class="{
-                'is-audio': isAudioMode(row.options?.mode),
-                'is-loading': thumbLoading(row.id),
-                'is-empty':
-                  !thumbUrl(row.id) &&
-                  !thumbLoading(row.id) &&
-                  !isAudioMode(row.options?.mode),
-                'is-clickable': Boolean(thumbUrl(row.id))
-              }"
+            <el-tooltip
+              content="点击查看大图"
+              placement="top"
+              :show-after="400"
               :disabled="!thumbUrl(row.id)"
-              :title="thumbUrl(row.id) ? '点击查看大图' : undefined"
-              class="file-thumb"
-              type="button"
-              @click="openThumbPreview(row, $event)"
             >
-              <img
-                v-if="thumbUrl(row.id)"
-                :src="thumbUrl(row.id)!"
-                alt=""
-                class="file-thumb-img"
-                draggable="false"
-              />
-            </button>
+              <button
+                :class="{
+                  'is-audio': isAudioMode(row.options?.mode),
+                  'is-loading': thumbLoading(row.id),
+                  'is-empty':
+                    !thumbUrl(row.id) &&
+                    !thumbLoading(row.id) &&
+                    !isAudioMode(row.options?.mode),
+                  'is-clickable': Boolean(thumbUrl(row.id))
+                }"
+                :disabled="!thumbUrl(row.id)"
+                class="file-thumb"
+                type="button"
+                @click="openThumbPreview(row, $event)"
+              >
+                <img
+                  v-if="thumbUrl(row.id)"
+                  :src="thumbUrl(row.id)!"
+                  alt=""
+                  class="file-thumb-img"
+                  draggable="false"
+                />
+              </button>
+            </el-tooltip>
             <div class="file-cell">
-            <span class="file-name" :title="row.fileName">{{ row.fileName }}</span>
+            <el-tooltip
+              :content="row.fileName"
+              placement="top"
+              :show-after="400"
+              :disabled="!row.fileName"
+            >
+              <span class="file-name">{{ row.fileName }}</span>
+            </el-tooltip>
             <template v-if="isStitchTask(row)">
               <button
                 type="button"
@@ -250,7 +264,14 @@ function baseName(p: string): string {
                   class="stitch-item"
                 >
                   <span class="stitch-idx">{{ idx + 1 }}.</span>
-                  <span class="stitch-name" :title="p">{{ baseName(p) }}</span>
+                  <el-tooltip
+                    :content="p"
+                    placement="top"
+                    :show-after="400"
+                    :disabled="!p"
+                  >
+                    <span class="stitch-name">{{ baseName(p) }}</span>
+                  </el-tooltip>
                   <template v-if="isStitchEditable(row)">
                     <el-button
                       link
@@ -364,14 +385,26 @@ function baseName(p: string): string {
       </el-table-column>
       <el-table-column label="信息" min-width="110">
         <template #default="{ row }">
-          <span v-if="row.error" :title="row.error" class="err-text">{{ row.error }}</span>
-          <span
-            v-else-if="row.status === 'completed'"
-            :title="row.resolvedEncoder"
-            class="meta-ok"
+          <el-tooltip
+            v-if="row.error"
+            :content="row.error"
+            placement="top"
+            :show-after="400"
+            :disabled="!row.error"
           >
-            完成{{ row.resolvedEncoder ? ` · ${row.resolvedEncoder}` : '' }}
-          </span>
+            <span class="err-text">{{ row.error }}</span>
+          </el-tooltip>
+          <el-tooltip
+            v-else-if="row.status === 'completed'"
+            :content="row.resolvedEncoder || ''"
+            placement="top"
+            :show-after="400"
+            :disabled="!row.resolvedEncoder"
+          >
+            <span class="meta-ok">
+              完成{{ row.resolvedEncoder ? ` · ${row.resolvedEncoder}` : '' }}
+            </span>
+          </el-tooltip>
           <span v-else class="meta-muted">—</span>
         </template>
       </el-table-column>

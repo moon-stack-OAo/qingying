@@ -1,5 +1,7 @@
 import type {ImageEngineId, ImageEngineStatus, ImageProcessOptions, ImageProcessResult} from '../../../shared/types'
 import {checkMagickAvailable, checkSharpReady, setMagickOverride} from './bin'
+import type { TaskCancelSignal } from './cancel'
+import { isCancelled } from './cancel'
 import {processWithMagick} from './magickEngine'
 import {processWithSharp} from './sharpEngine'
 
@@ -44,14 +46,19 @@ export function getImageEngineStatus(): ImageEngineStatus {
 }
 
 export async function processImage(
-  options: ImageProcessOptions
+  options: ImageProcessOptions,
+  signal?: TaskCancelSignal
 ): Promise<ImageProcessResult> {
+  if (isCancelled(signal)) {
+    return { ok: false, error: '已取消', cancelled: true }
+  }
+
   const stitchCount = (options.inputs || []).filter((p) => (p || '').trim())
     .length
   // 多图拼接仅 Sharp 支持
   if (stitchCount >= 2) {
     if (checkSharpReady()) {
-      return processWithSharp(options)
+      return processWithSharp(options, signal)
     }
     return {
       ok: false,
@@ -66,7 +73,8 @@ export async function processImage(
     if (!magick.ready) {
       // magick 不可用时回退 sharp（若可用）
       if (checkSharpReady()) {
-        const r = await processWithSharp(options)
+        const r = await processWithSharp(options, signal)
+        if (r.cancelled) return r
         if (r.ok) {
           return {
             ...r,
@@ -81,13 +89,13 @@ export async function processImage(
         error: magick.error || 'ImageMagick 不可用'
       }
     }
-    return processWithMagick(options)
+    return processWithMagick(options, signal)
   }
 
   if (!checkSharpReady()) {
     const magick = checkMagickAvailable()
     if (magick.ready) {
-      return processWithMagick(options)
+      return processWithMagick(options, signal)
     }
     return {
       ok: false,
@@ -95,10 +103,11 @@ export async function processImage(
       error: 'sharp 不可用，且未找到 ImageMagick'
     }
   }
-  return processWithSharp(options)
+  return processWithSharp(options, signal)
 }
 
 export { checkSharpReady, checkMagickAvailable, setMagickOverride }
+export type { TaskCancelSignal } from './cancel'
 export { getImageInfo, getImageDataUrl, getImageJpegBuffer } from './preview'
 export type {
   ImageInfoResult,

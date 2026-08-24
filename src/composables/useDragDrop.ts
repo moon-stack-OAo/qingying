@@ -112,7 +112,15 @@ export function useDragDrop(options: UseDragDropOptions) {
   function subscribe(): () => void {
     return window.electronAPI.onFilesDropped((files) => {
       dragging.value = false
-      console.log('[renderer] onFilesDropped', files)
+      if (import.meta.env.DEV) {
+        console.log('[renderer] onFilesDropped', files)
+      } else {
+        console.log(
+          '[renderer] onFilesDropped',
+          files.length,
+          files.map((f) => f.name || f.path.replace(/^.*[\\/]/, ''))
+        )
+      }
       if (!files.length) {
         // 另一通道刚成功添加则不弹警告
         if (Date.now() - options.lastDropOkAt.value < 800) return
