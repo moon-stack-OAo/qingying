@@ -1089,7 +1089,9 @@ async function onResetSettings(): Promise<void> {
         :update-available="
           updateInfo.state === 'available' || updateInfo.state === 'downloading'
         "
-        :update-downloaded="updateInfo.state === 'downloaded'"
+        :update-downloaded="
+          updateInfo.state === 'downloaded' || updateInfo.state === 'installing'
+        "
         :update-version="updateInfo.version"
         @open-settings="settingsVisible = true"
         @show-shortcuts="shortcutHelpVisible = true"

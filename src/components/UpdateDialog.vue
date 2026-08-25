@@ -1,13 +1,6 @@
 <script lang="ts" setup>
 import {computed} from 'vue'
-import {
-  CircleCheckFilled,
-  Download,
-  InfoFilled,
-  Loading,
-  Refresh,
-  WarningFilled
-} from '@element-plus/icons-vue'
+import {CircleCheckFilled, Download, InfoFilled, Loading, Refresh, WarningFilled} from '@element-plus/icons-vue'
 import type {UpdateStatusPayload} from '@shared/types'
 import {PRODUCT_NAME} from '@shared/brand'
 import faviconUrl from '../favicon.png'
@@ -29,11 +22,23 @@ const emit = defineEmits<{
   installUpdate: []
 }>()
 
+const state = computed(() => props.updateInfo.state)
+const isInstalling = computed(() => state.value === 'installing')
+
 function close(): void {
+  if (isInstalling.value) return
   emit('update:modelValue', false)
 }
 
-const state = computed(() => props.updateInfo.state)
+function onBeforeClose(done: () => void): void {
+  if (isInstalling.value) return
+  done()
+}
+
+function onModelUpdate(v: boolean): void {
+  if (!v && isInstalling.value) return
+  emit('update:modelValue', v)
+}
 
 const statusMeta = computed(() => {
   switch (state.value) {
@@ -45,6 +50,8 @@ const statusMeta = computed(() => {
       return {type: 'primary' as const, label: '正在下载更新', icon: Download}
     case 'downloaded':
       return {type: 'success' as const, label: '更新已就绪', icon: CircleCheckFilled}
+    case 'installing':
+      return {type: 'info' as const, label: '正在安装更新', icon: Loading}
     case 'not-available':
       return {type: 'success' as const, label: '已是最新版本', icon: CircleCheckFilled}
     case 'error':
@@ -76,6 +83,8 @@ const idleTitle = computed(() => {
   switch (state.value) {
     case 'checking':
       return '正在检查更新'
+    case 'installing':
+      return '正在安装更新'
     case 'not-available':
       return '已是最新版本'
     case 'error':
@@ -86,6 +95,9 @@ const idleTitle = computed(() => {
 })
 
 const idleHint = computed(() => {
+  if (state.value === 'installing') {
+    return props.updateInfo.message || '正在静默安装并准备重启，请勿关闭本窗口'
+  }
   if (props.updateInfo.message) return props.updateInfo.message
   if (!props.isPackaged) return '开发模式不检查更新，请使用打包后的安装包验证'
   if (state.value === 'checking') return '正在连接更新服务器…'
@@ -213,18 +225,21 @@ function inlineHtml(text: string): string {
   <el-dialog
       :model-value="modelValue"
       :close-on-click-modal="false"
+      :close-on-press-escape="!isInstalling"
+      :show-close="!isInstalling"
+      :before-close="onBeforeClose"
       class="update-dialog"
       width="min(760px, 96vw)"
       append-to-body
       destroy-on-close
       align-center
-      @update:model-value="emit('update:modelValue', $event)"
+      @update:model-value="onModelUpdate"
   >
     <template #header>
       <div class="update-header">
         <div class="update-brand">
           <div class="update-brand-mark" aria-hidden="true">
-            <img class="update-brand-icon" :src="faviconUrl" alt="" />
+            <img class="update-brand-icon" :src="faviconUrl" alt=""/>
           </div>
           <div class="update-brand-text">
             <div class="update-brand-name">
@@ -233,10 +248,13 @@ function inlineHtml(text: string): string {
             </div>
             <div class="update-brand-sub" :class="`is-${statusMeta.type}`">
               <el-icon
-                :size="13"
-                :class="{ 'update-status-spin': state === 'checking' }"
+                  :size="13"
+                  :class="{
+                  'update-status-spin':
+                    state === 'checking' || state === 'installing'
+                }"
               >
-                <component :is="statusMeta.icon" />
+                <component :is="statusMeta.icon"/>
               </el-icon>
               <span>{{ statusMeta.label }}</span>
             </div>
@@ -253,7 +271,7 @@ function inlineHtml(text: string): string {
             <span class="ver-num">v{{ appVersion }}</span>
           </div>
           <div class="ver-arrow" aria-hidden="true">
-            <span class="ver-arrow-line" />
+            <span class="ver-arrow-line"/>
             <span class="ver-arrow-head">›</span>
           </div>
           <div class="ver-card is-new">
@@ -266,9 +284,9 @@ function inlineHtml(text: string): string {
         </div>
 
         <div
-          v-if="updateInfo.message && state !== 'downloading'"
-          class="update-msg"
-          :class="{
+            v-if="updateInfo.message && state !== 'downloading'"
+            class="update-msg"
+            :class="{
             'is-error': state === 'error',
             'is-ok': state === 'downloaded' || state === 'available'
           }"
@@ -282,7 +300,7 @@ function inlineHtml(text: string): string {
             <span class="update-progress-pct">{{ downloadPercent }}%</span>
           </div>
           <div class="update-progress-track">
-            <div class="update-progress-fill" :style="{ width: `${downloadPercent}%` }" />
+            <div class="update-progress-fill" :style="{ width: `${downloadPercent}%` }"/>
           </div>
           <div v-if="downloadDetail" class="update-progress-meta">{{ downloadDetail }}</div>
         </div>
@@ -292,18 +310,18 @@ function inlineHtml(text: string): string {
           <div class="update-notes-scroll thin-scrollbar">
             <template v-for="(block, i) in notesBlocks" :key="i">
               <div
-                v-if="block.type === 'h'"
-                class="notes-h"
-                :class="`notes-h${block.level}`"
-                v-html="inlineHtml(block.text)"
+                  v-if="block.type === 'h'"
+                  class="notes-h"
+                  :class="`notes-h${block.level}`"
+                  v-html="inlineHtml(block.text)"
               />
               <p
-                v-else-if="block.type === 'p'"
-                class="notes-p"
-                v-html="inlineHtml(block.text)"
+                  v-else-if="block.type === 'p'"
+                  class="notes-p"
+                  v-html="inlineHtml(block.text)"
               />
               <ul v-else-if="block.type === 'ul'" class="notes-ul">
-                <li v-for="(item, j) in block.items" :key="j" v-html="inlineHtml(item)" />
+                <li v-for="(item, j) in block.items" :key="j" v-html="inlineHtml(item)"/>
               </ul>
             </template>
           </div>
@@ -312,8 +330,11 @@ function inlineHtml(text: string): string {
 
       <div v-else class="update-idle" :class="`is-${statusMeta.type}`">
         <div class="update-idle-icon" aria-hidden="true">
-          <el-icon :size="28" :class="{ 'update-status-spin': state === 'checking' }">
-            <component :is="statusMeta.icon" />
+          <el-icon
+              :size="28"
+              :class="{ 'update-status-spin': state === 'checking' || state === 'installing' }"
+          >
+            <component :is="statusMeta.icon"/>
           </el-icon>
         </div>
         <div class="update-idle-title">{{ idleTitle }}</div>
@@ -329,57 +350,66 @@ function inlineHtml(text: string): string {
     <template #footer>
       <div class="update-footer">
         <el-button
-          v-if="state !== 'downloading'"
-          class="update-btn-ghost"
-          @click="close"
+            v-if="state !== 'downloading' && state !== 'installing'"
+            class="update-btn-ghost"
+            @click="close"
         >
           关闭
         </el-button>
         <el-button
-          v-if="state === 'downloading'"
-          class="update-btn-ghost"
-          @click="emit('cancelDownload')"
+            v-if="state === 'downloading'"
+            class="update-btn-ghost"
+            @click="emit('cancelDownload')"
         >
           取消下载
         </el-button>
         <el-button
-          v-if="state === 'available'"
-          :loading="updateDownloading"
-          type="primary"
-          class="update-btn-primary"
-          @click="emit('downloadUpdate')"
+            v-if="state === 'available'"
+            :loading="updateDownloading"
+            type="primary"
+            class="update-btn-primary"
+            @click="emit('downloadUpdate')"
         >
           <el-icon v-if="!updateDownloading" class="btn-icon">
-            <Download />
+            <Download/>
           </el-icon>
           下载更新
         </el-button>
         <el-button
-          v-if="state === 'downloaded'"
-          type="success"
-          class="update-btn-success"
-          @click="emit('installUpdate')"
+            v-if="state === 'downloaded'"
+            type="success"
+            class="update-btn-success"
+            @click="emit('installUpdate')"
         >
           <el-icon class="btn-icon">
-            <Refresh />
+            <Refresh/>
           </el-icon>
-          重启并安装
+          安装并重启
         </el-button>
         <el-button
-          v-if="state === 'error'"
-          type="primary"
-          class="update-btn-primary"
-          :disabled="!updateInfo.version"
-          @click="emit('downloadUpdate')"
+            v-if="state === 'installing'"
+            type="primary"
+            class="update-btn-primary"
+            loading
+            disabled
+        >
+          正在安装…
+        </el-button>
+        <el-button
+            v-if="state === 'error'"
+            type="primary"
+            class="update-btn-primary"
+            :disabled="!updateInfo.version"
+            @click="emit('downloadUpdate')"
         >
           重试下载
         </el-button>
         <el-button
-          v-if="state === 'error' || state === 'not-available' || state === 'idle'"
-          :loading="updateChecking"
-          :type="state === 'error' ? 'default' : 'primary'"
-          :class="state === 'error' ? '' : 'update-btn-primary'"
-          @click="emit('checkUpdate')"
+            v-if="state === 'error' || state === 'not-available' || state === 'idle'"
+            :loading="updateChecking"
+            :type="state === 'error' ? 'default' : 'primary'"
+            :class="state === 'error' ? '' : 'update-btn-primary'"
+            @click="emit('checkUpdate')"
         >
           重新检查
         </el-button>

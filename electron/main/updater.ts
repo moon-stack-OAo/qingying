@@ -117,7 +117,7 @@ export function initAutoUpdater(win: BrowserWindow): void {
   initialized = true
 
   autoUpdater.autoDownload = false
-  // 仅用户点击「重启并安装」时安装，普通退出不装
+  // 仅用户点击「安装并重启」时安装，普通退出不装
   autoUpdater.autoInstallOnAppQuit = false
   // 始终全量下载，避免差分失败后出现「先几 MB 再重下」双段进度
   autoUpdater.disableDifferentialDownload = true
@@ -178,7 +178,7 @@ export function initAutoUpdater(win: BrowserWindow): void {
       state: 'downloaded',
       version: info.version,
       releaseNotes: normalizeReleaseNotes(info.releaseNotes) ?? lastReleaseNotes,
-      message: `新版本 v${info.version} 已下载，请点击「重启并安装」；普通退出不会安装`
+      message: `新版本 v${info.version} 已下载，请点击「安装并重启」；普通退出不会安装`
     })
   })
 
@@ -400,8 +400,28 @@ export function quitAndInstall(): { ok: boolean; error?: string } {
   if (!updateDownloaded) {
     return { ok: false, error: '尚未下载完成，无法安装' }
   }
+  // 先通知渲染进程进入「安装中」（不可取消），再静默安装并强制重启
+  send({
+    state: 'installing',
+    version: lastAvailableVersion || undefined,
+    currentVersion: app.getVersion(),
+    message: '正在安装更新，应用即将重启…',
+    percent: 100
+  })
   // isSilent=true 静默安装；isForceRunAfter=true 装完自动启动
-  autoUpdater.quitAndInstall(true, true)
+  // 稍延迟，确保 IPC 状态先到达更新弹窗
+  setTimeout(() => {
+    try {
+      autoUpdater.quitAndInstall(true, true)
+    } catch {
+      send({
+        state: 'error',
+        version: lastAvailableVersion || undefined,
+        currentVersion: app.getVersion(),
+        message: '启动安装程序失败，请关闭应用后手动运行安装包'
+      })
+    }
+  }, 400)
   return { ok: true }
 }
 

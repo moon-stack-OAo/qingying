@@ -539,6 +539,8 @@ export type UpdateState =
   | 'not-available'
   | 'downloading'
   | 'downloaded'
+  /** 已调用静默安装，等待退出并重启 */
+  | 'installing'
   | 'error'
 
 /** 自动更新事件载荷 */

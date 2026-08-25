@@ -1235,6 +1235,8 @@ app.whenReady().then(() => {
   registerIpc()
   registerUpdaterIpc()
   createWindow()
+  // 启动后托盘常驻，不依赖「最小化到托盘」才创建
+  ensureTray()
   // 若上次开启了局域网远程，启动时恢复 HTTP 服务
   void syncLanServerFromSettings().catch((err) => {
     console.warn('[main] syncLanServerFromSettings failed:', err)

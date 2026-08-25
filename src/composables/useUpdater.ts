@@ -116,8 +116,23 @@ export function useUpdater() {
   }
 
   async function onInstallUpdate(): Promise<void> {
+    // 先切到安装中 UI（禁关闭），再调主进程；主进程也会推 installing
+    updateDialogVisible.value = true
+    applyUpdateStatus({
+      state: 'installing',
+      version: updateInfo.value.version,
+      currentVersion: appVersion.value,
+      message: '正在安装更新，应用即将重启…',
+      percent: 100
+    })
     const res = await window.electronAPI.installUpdate()
     if (!res.ok) {
+      applyUpdateStatus({
+        state: 'error',
+        version: updateInfo.value.version,
+        currentVersion: appVersion.value,
+        message: res.error || '安装失败'
+      })
       ElMessage.error(res.error || '安装失败')
     }
   }
