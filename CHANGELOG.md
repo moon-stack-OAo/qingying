@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### 计划
+
+- Windows 代码签名、macOS 公证完整链路（配置与证书就绪后启用）
+
+## [1.2.0]
+
 ### 安全
 
 - **IPC 路径白名单**：读图 / 抽帧 / 打开路径 / 图片处理 / 启动任务前校验路径，仅允许用户选择、拖入、历史任务及应用数据 /
@@ -44,10 +50,6 @@
 
 - 完善代码签名 / 公证文档与 CI 接线说明（Secrets 可选注入；无证书时跳过签名且不失败）。**仍需真实证书才能实际签名**
   ，未宣称已支持生产签名
-
-### 计划
-
-- Windows 代码签名、macOS 公证完整链路（配置与证书就绪后启用）
 
 ## [1.1.0]
 
@@ -201,6 +203,10 @@
 | `Ctrl/Cmd + D`                                | 切换浅色 / 深色 |
 | `F1` 或 `Ctrl + /`                             | 快捷键帮助     |
 
-[Unreleased]: https://github.com/moon-stack-OAo/qingying/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/moon-stack-OAo/qingying/compare/v1.2.0...HEAD
+
+[1.2.0]: https://github.com/moon-stack-OAo/qingying/releases/tag/v1.2.0
+
+[1.1.0]: https://github.com/moon-stack-OAo/qingying/releases/tag/v1.1.0
 
 [1.0.0]: https://github.com/moon-stack-OAo/qingying/releases/tag/v1.0.0
