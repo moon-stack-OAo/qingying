@@ -47,6 +47,11 @@ export {
   type RunMediaComposeParams
 } from './composeRunner'
 
+export {
+  runMosaicFrameByFrame,
+  type RunMosaicFrameByFrameParams
+} from './mosaicFrameRunner'
+
 // 纯逻辑 re-export，保持原 ffmpeg.ts 对外 API 兼容
 export {
   mapCrfToHardwareQuality,

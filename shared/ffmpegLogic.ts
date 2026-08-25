@@ -628,6 +628,23 @@ export function normalizeMosaicRegions(
   return result
 }
 
+/**
+ * 某时刻是否应对该区域打码（与 buildMosaicEnableExpr 语义一致）
+ * - endSec 缺省 / ≤0：到片尾
+ * - startSec=0 且无结束：全程
+ */
+export function isMosaicRegionActiveAt(
+  region: MosaicRegion,
+  timeSec: number
+): boolean {
+  const t = Number.isFinite(timeSec) ? timeSec : 0
+  if (t < region.startSec) return false
+  if (region.endSec != null && region.endSec > region.startSec) {
+    return t <= region.endSec
+  }
+  return true
+}
+
 /** 打码时间段 enable 表达式，0 为有效起点 */
 function buildMosaicEnableExpr(region: MosaicRegion): string | null {
   if (region.endSec != null && region.endSec > region.startSec) {

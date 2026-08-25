@@ -75,12 +75,13 @@ export function normalizeTaskForRestore(
     ? ({ ...(raw.options as unknown as CompressOptions) } as CompressOptions)
     : ({} as CompressOptions)
 
-  // 不兼容旧 compress 任务上的打码：恢复时直接剥离 mosaics
+  // 不兼容旧 compress 任务上的打码：恢复时直接剥离 mosaics / mosaicPipeline
   if (
     (options.mode == null || options.mode === 'compress') &&
-    options.mosaics
+    (options.mosaics || options.mosaicPipeline)
   ) {
     delete options.mosaics
+    delete options.mosaicPipeline
   }
 
   const task: CompressTask = {

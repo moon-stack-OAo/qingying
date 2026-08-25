@@ -165,6 +165,9 @@ export function optionsSummary(task: CompressTask): string {
     parts.push(`CRF: ${o.crf}`)
     parts.push(`格式: ${o.format}`)
     parts.push(`编码器: ${o.encoder}`)
+    parts.push(
+      o.mosaicPipeline?.frameByFrame ? '流水线: 逐帧' : '流水线: 滤镜'
+    )
     if (o.mosaics?.length) {
       parts.push(`打码区域: ${o.mosaics.length} 个`)
     } else {

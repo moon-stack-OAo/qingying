@@ -172,6 +172,13 @@ export function useTasks(deps: UseTasksDeps) {
       delete next.mosaics
     }
 
+    // 逐帧开关取当前草稿（与滤镜/流水线选择一致）
+    if (draft.mosaicPipeline) {
+      next.mosaicPipeline = { ...draft.mosaicPipeline }
+    } else {
+      delete next.mosaicPipeline
+    }
+
     if (draft.image || prev?.image) {
       // 安全字段以草稿为准，crop 优先任务级
       const merged: NonNullable<CompressOptions['image']> = {

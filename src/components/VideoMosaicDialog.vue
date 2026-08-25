@@ -202,15 +202,18 @@ watch(
           controls-position="right"
         />
         <span>结束</span>
-        <el-input-number
-          v-model="draftEnd"
-          :min="0"
-          :max="86400"
-          :step="0.5"
-          :precision="2"
-          size="small"
-          controls-position="right"
-        />
+        <el-tooltip content="0 = 到视频结尾（全程打码）" placement="top" :show-after="400">
+          <el-input-number
+            v-model="draftEnd"
+            :min="0"
+            :max="86400"
+            :step="0.5"
+            :precision="2"
+            size="small"
+            controls-position="right"
+          />
+        </el-tooltip>
+        <span class="muted">0=到结尾</span>
         <el-select v-model="draftMode" size="small" class="mode-select">
           <el-option label="像素化" value="pixelate" />
           <el-option label="模糊" value="blur" />

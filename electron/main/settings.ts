@@ -59,6 +59,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   imageGap: 0,
   imageBackground: '#000000',
   concatPreferCopy: true,
+  mosaicFrameByFrame: false,
   lanRemoteEnabled: false,
   lanPort: 17890,
   lanBindHost: '0.0.0.0',
@@ -278,6 +279,10 @@ function normalize(raw: Partial<AppSettings> | null | undefined): AppSettings {
       typeof src.concatPreferCopy === 'boolean'
         ? src.concatPreferCopy
         : DEFAULT_SETTINGS.concatPreferCopy,
+    mosaicFrameByFrame:
+      typeof src.mosaicFrameByFrame === 'boolean'
+        ? src.mosaicFrameByFrame
+        : DEFAULT_SETTINGS.mosaicFrameByFrame,
     lanRemoteEnabled:
       typeof src.lanRemoteEnabled === 'boolean'
         ? src.lanRemoteEnabled

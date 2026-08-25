@@ -112,6 +112,8 @@ const props = withDefaults(
     cropW: number
     cropH: number
     concatPreferCopy: boolean
+    /** 视频打码：逐帧流水线 */
+    mosaicFrameByFrame: boolean
     composeIntroPath: string
     composeIntroDuration: number
     composeOutroPath: string
@@ -143,6 +145,7 @@ const props = withDefaults(
   }>(),
   {
     cropPreviewPath: '',
+    mosaicFrameByFrame: false,
     showCropComposeWarning: false,
     cropComposeWarningText: ''
   }
@@ -191,6 +194,7 @@ const emit = defineEmits<{
   cropWChange: [v: number]
   cropHChange: [v: number]
   concatPreferCopyChange: [v: boolean]
+  mosaicFrameByFrameChange: [v: boolean]
   composeIntroPathChange: [v: string]
   composeIntroDurationChange: [v: number]
   composeOutroPathChange: [v: string]
@@ -713,6 +717,23 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 
       <template v-else-if="isVideoMosaicMode">
         <!-- 编辑打码区域入口保留在 MosaicWorkbench；编码器固定软件，避免硬件探测卡住 -->
+        <el-tooltip
+          content="关闭：FFmpeg 滤镜一次编码（推荐）。开启：抽出全部帧为 JPEG，用 Sharp 打码后再封装——更慢、临时盘占用大，适合对照或特殊需求。"
+          placement="top"
+          :show-after="400"
+        >
+          <div class="opt-item">
+            <span class="label">逐帧流水线</span>
+            <el-switch
+              :model-value="mosaicFrameByFrame"
+              size="small"
+              @change="(v: string | number | boolean) => emit('mosaicFrameByFrameChange', Boolean(v))"
+            />
+            <span class="hint-inline hint-inline--tight">
+              {{ mosaicFrameByFrame ? '抽帧→打码→封装' : '滤镜一次编码' }}
+            </span>
+          </div>
+        </el-tooltip>
         <span class="hint-inline">
           接近原画导出（CRF 18 · 原分辨率 · MP4 · 软件编码）
         </span>

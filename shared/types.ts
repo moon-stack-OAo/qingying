@@ -175,6 +175,12 @@ export interface CompressOptions {
   /** 视频局部打码（原图像素，旋转/裁切后的坐标系） */
   mosaics?: MosaicRegion[]
   /**
+   * 视频打码流水线（仅 mode=video-mosaic）
+   * - frameByFrame=false / 缺省：FFmpeg filter 一次编码（默认）
+   * - frameByFrame=true：抽帧 JPEG → Sharp 打码 → 再封装（更慢、占临时盘）
+   */
+  mosaicPipeline?: MosaicPipelineOptions
+  /**
    * 图片处理参数（mode 为 image / image-crop / image-stitch 时用）
    */
   image?: {
@@ -215,6 +221,14 @@ export interface MosaicRegion {
   mode: 'pixelate' | 'blur'
   /** 像素块边长或模糊强度，范围 2–128 */
   strength: number
+}
+
+/** 视频打码流水线选项 */
+export interface MosaicPipelineOptions {
+  /** 是否逐帧导出再打码；默认 false（走 FFmpeg 滤镜） */
+  frameByFrame?: boolean
+  /** 中间帧 JPEG 质量 1–100，默认 92 */
+  jpegQuality?: number
 }
 
 /** 图+视频混剪选项 */
@@ -651,6 +665,8 @@ export interface AppSettings {
   imageBackground: string
   /** 视频拼接优先流复制，默认 true */
   concatPreferCopy: boolean
+  /** 视频打码是否逐帧流水线，默认 false（走 FFmpeg 滤镜） */
+  mosaicFrameByFrame: boolean
   /** 是否允许局域网远程访问，默认 false */
   lanRemoteEnabled: boolean
   /** 局域网 HTTP 服务端口，默认 17890 */

@@ -103,6 +103,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
   const cropH = ref(0)
   /** 视频拼接优先流复制 */
   const concatPreferCopy = ref(true)
+  /** 视频打码：逐帧导出流水线（持久化） */
+  const mosaicFrameByFrame = ref(false)
   /** 图+视频混剪（任务级，不持久化） */
   const composeIntroPath = ref('')
   const composeIntroDuration = ref(3)
@@ -488,6 +490,10 @@ export function useSettings(options: UseSettingsOptions = {}) {
       base.maxEdge = 0
       base.format = 'mp4'
       base.encoder = 'software'
+      base.mosaicPipeline = {
+        frameByFrame: mosaicFrameByFrame.value,
+        jpegQuality: 92
+      }
       delete base.targetSizeMb
       delete base.twoPass
       delete base.watermark
@@ -540,6 +546,7 @@ export function useSettings(options: UseSettingsOptions = {}) {
     imageGap: number
     imageBackground: string
     concatPreferCopy: boolean
+    mosaicFrameByFrame: boolean
   }>): void {
     if (persistTimer) clearTimeout(persistTimer)
     persistTimer = setTimeout(() => {
@@ -579,7 +586,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
         imageGridCols: imageGridCols.value,
         imageGap: imageGap.value,
         imageBackground: imageBackground.value,
-        concatPreferCopy: concatPreferCopy.value
+        concatPreferCopy: concatPreferCopy.value,
+        mosaicFrameByFrame: mosaicFrameByFrame.value
       }
       void window.electronAPI.setSettings(payload)
     }, 300)
@@ -700,6 +708,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
         : '#000000'
     concatPreferCopy.value =
       typeof s.concatPreferCopy === 'boolean' ? s.concatPreferCopy : true
+    mosaicFrameByFrame.value =
+      typeof s.mosaicFrameByFrame === 'boolean' ? s.mosaicFrameByFrame : false
     closeAction.value =
       s.closeAction === 'tray' || s.closeAction === 'quit' || s.closeAction === 'ask'
         ? s.closeAction
@@ -983,6 +993,12 @@ export function useSettings(options: UseSettingsOptions = {}) {
   function onConcatPreferCopyChange(v: boolean): void {
     concatPreferCopy.value = Boolean(v)
     persist({ concatPreferCopy: concatPreferCopy.value })
+    options.onOptionsChange?.()
+  }
+
+  function onMosaicFrameByFrameChange(v: boolean): void {
+    mosaicFrameByFrame.value = Boolean(v)
+    persist({ mosaicFrameByFrame: mosaicFrameByFrame.value })
     options.onOptionsChange?.()
   }
 
@@ -1379,6 +1395,7 @@ export function useSettings(options: UseSettingsOptions = {}) {
     cropW,
     cropH,
     concatPreferCopy,
+    mosaicFrameByFrame,
     composeIntroPath,
     composeIntroDuration,
     composeOutroPath,
@@ -1456,6 +1473,7 @@ export function useSettings(options: UseSettingsOptions = {}) {
     onCropWChange,
     onCropHChange,
     onConcatPreferCopyChange,
+    onMosaicFrameByFrameChange,
     onAudioFormatChange,
     onAudioBitrateChange,
     onNotifyOnCompleteChange,

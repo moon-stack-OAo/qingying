@@ -102,6 +102,7 @@ const {
   cropW,
   cropH,
   concatPreferCopy,
+  mosaicFrameByFrame,
   composeIntroPath,
   composeIntroDuration,
   composeOutroPath,
@@ -139,6 +140,7 @@ const {
   onCropWChange,
   onCropHChange,
   onConcatPreferCopyChange,
+  onMosaicFrameByFrameChange,
   onComposeIntroPathChange,
   onComposeIntroDurationChange,
   onComposeOutroPathChange,
@@ -1162,6 +1164,7 @@ async function onResetSettings(): Promise<void> {
         :crop-h="cropH"
         :crop-preview-path="cropPreviewPath"
         :concat-prefer-copy="concatPreferCopy"
+        :mosaic-frame-by-frame="mosaicFrameByFrame"
         :compose-intro-path="composeIntroPath"
         :compose-intro-duration="composeIntroDuration"
         :compose-outro-path="composeOutroPath"
@@ -1224,6 +1227,7 @@ async function onResetSettings(): Promise<void> {
         @crop-w-change="onCropWChangeUi"
         @crop-h-change="onCropHChangeUi"
         @concat-prefer-copy-change="onConcatPreferCopyChange"
+        @mosaic-frame-by-frame-change="onMosaicFrameByFrameChange"
         @compose-intro-path-change="onComposeIntroPathChangeUi"
         @compose-intro-duration-change="onComposeIntroDurationChangeUi"
         @compose-outro-path-change="onComposeOutroPathChangeUi"

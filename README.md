@@ -5,7 +5,8 @@
 **版本说明**以 [CHANGELOG.md](./CHANGELOG.md) 为准（与 `package.json` 的 `version` 对齐）；README 不单独维护版本号。
 
 基于 **Electron + Vue 3 + TypeScript + Element Plus**。  
-通过内置 `ffmpeg-static` / `@ffprobe-installer/ffprobe` 调用 FFmpeg，无需系统预先安装 FFmpeg。
+通过内置 `ffmpeg-static` / `@ffprobe-installer/ffprobe` 调用 FFmpeg，无需系统预先安装 FFmpeg。  
+视频打码默认用滤镜一次编码；可选「逐帧流水线」（抽帧 JPEG → Sharp 打码 → 封装）。
 
 ## 功能
 

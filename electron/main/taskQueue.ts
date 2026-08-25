@@ -15,6 +15,7 @@ import {
   pathExistsAsync,
   runCompress,
   runMediaCompose,
+  runMosaicFrameByFrame,
   runVideoConcat,
   uniqueOutputPathAsync
 } from './ffmpeg'
@@ -604,6 +605,34 @@ export class TaskQueue {
             signal,
             item
           )
+          return
+        }
+
+        const mosaicOpts = {
+          ...task.options,
+          encoder: 'software' as const
+        }
+
+        // 逐帧流水线：抽帧 JPEG → Sharp 打码 → 封装
+        if (task.options?.mosaicPipeline?.frameByFrame) {
+          if (signal.cancelled) {
+            this.emitResult(
+              task,
+              { code: -1, error: '已取消', inputSize: task.inputSize },
+              signal,
+              item
+            )
+            return
+          }
+          const result = await runMosaicFrameByFrame({
+            taskId: task.id,
+            inputPath: task.inputPath,
+            outputPath: task.outputPath,
+            options: mosaicOpts,
+            onProgress,
+            signal
+          })
+          this.emitResult(task, result, signal, item)
           return
         }
       }
