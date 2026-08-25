@@ -4,6 +4,7 @@ import {ElMessage, ElMessageBox} from 'element-plus'
 import type {
   AppInfo,
   CompressOptions,
+  CompressTask,
   ImageEngineStatus,
   LanStatus,
   MediaComposeOptions,
@@ -15,6 +16,9 @@ import {IMAGE_EXTENSIONS} from '@shared/types'
 import TitleBar from './components/TitleBar.vue'
 import CompressOptionsPanel from './components/CompressOptionsPanel.vue'
 import VideoMosaicDialog from './components/VideoMosaicDialog.vue'
+import StitchOrderDialog, {
+  type StitchOrderConfirmPayload
+} from './components/StitchOrderDialog.vue'
 import DropZone from './components/DropZone.vue'
 import CloseConfirmDialog from './components/CloseConfirmDialog.vue'
 import SettingsDrawer from './components/SettingsDrawer.vue'
@@ -210,9 +214,8 @@ const {
   sizeSummary,
   addFiles,
   onSelectFiles,
-  removeStitchInput,
   appendStitchInputs,
-  reorderStitchInput,
+  applyStitchOrder,
   startOne,
   startAll,
   cancelOne,
@@ -375,6 +378,54 @@ const cropComposeWarningText = computed(
 
 /** 打码规则仅属于 video-mosaic 模式下的当前任务，不参与全局选项同步。 */
 const mosaicDialogOpen = ref(false)
+
+/** 视频/图片拼接顺序弹窗 */
+const stitchOrderOpen = ref(false)
+const stitchOrderTaskId = ref<string | null>(null)
+const stitchOrderTask = computed(() => {
+  const id = stitchOrderTaskId.value
+  if (!id) return null
+  return tasks.value.find((t) => t.id === id) || null
+})
+const stitchOrderMode = computed<'image-stitch' | 'video-concat'>(() => {
+  const m = stitchOrderTask.value?.options?.mode
+  return m === 'image-stitch' ? 'image-stitch' : 'video-concat'
+})
+const stitchOrderPaths = computed(() => {
+  const t = stitchOrderTask.value
+  if (!t) return [] as string[]
+  const multi = (t.inputPaths || [])
+    .map((p) => (typeof p === 'string' ? p.trim() : ''))
+    .filter(Boolean)
+  if (multi.length > 0) return multi
+  const single = typeof t.inputPath === 'string' ? t.inputPath.trim() : ''
+  return single ? [single] : []
+})
+const stitchOrderEditable = computed(() => {
+  const t = stitchOrderTask.value
+  return !!(
+    t &&
+    (t.options?.mode === 'image-stitch' || t.options?.mode === 'video-concat') &&
+    (t.status === 'pending' || t.status === 'failed')
+  )
+})
+
+function openStitchOrder(task: CompressTask): void {
+  stitchOrderTaskId.value = task.id
+  stitchOrderOpen.value = true
+}
+
+function onStitchOrderConfirm(payload: StitchOrderConfirmPayload): void {
+  const id = stitchOrderTaskId.value
+  if (!id) return
+  applyStitchOrder(id, payload)
+}
+
+async function onStitchOrderAppend(): Promise<void> {
+  const id = stitchOrderTaskId.value
+  if (!id) return
+  await appendStitchInputs(id)
+}
 
 /** 打码单页：当前唯一任务（无列表时仍复用 useTasks 选中项） */
 const mosaicTask = computed(() => {
@@ -1257,6 +1308,19 @@ async function onResetSettings(): Promise<void> {
         @confirm="onMosaicConfirm"
     />
 
+    <StitchOrderDialog
+        v-model="stitchOrderOpen"
+        :mode="stitchOrderMode"
+        :paths="stitchOrderPaths"
+        :editable="stitchOrderEditable"
+        :layout="stitchOrderTask?.options?.image?.layout || imageLayout"
+        :grid-cols="stitchOrderTask?.options?.image?.gridCols ?? imageGridCols"
+        :gap="stitchOrderTask?.options?.image?.gap ?? imageGap"
+        :background="stitchOrderTask?.options?.image?.background || imageBackground"
+        @confirm="onStitchOrderConfirm"
+        @append="onStitchOrderAppend"
+    />
+
     <div class="workspace">
       <!-- 打码：无任务列表的单页工作台 -->
       <MosaicWorkbench
@@ -1305,9 +1369,7 @@ async function onResetSettings(): Promise<void> {
             @show-in-folder="showInFolder"
             @start-all="startAll"
             @start-one="startOne"
-            @remove-stitch-input="removeStitchInput"
-            @append-stitch-inputs="appendStitchInputs"
-            @reorder-stitch-input="reorderStitchInput"
+            @open-stitch-order="openStitchOrder"
         />
       </template>
     </div>

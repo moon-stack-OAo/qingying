@@ -56,9 +56,7 @@ const emit = defineEmits<{
   cancelAll: []
   clearFinished: []
   clearAll: []
-  removeStitchInput: [taskId: string, index: number]
-  appendStitchInputs: [taskId: string]
-  reorderStitchInput: [taskId: string, index: number, direction: 'up' | 'down']
+  openStitchOrder: [task: CompressTask]
 }>()
 
 function onRowClick(row: CompressTask): void {
@@ -90,8 +88,6 @@ function modeTagType(
 
 const detailVisible = ref(false)
 const detailTask = ref<CompressTask | null>(null)
-/** 展开的拼接输入列表 taskId */
-const expandedStitchIds = ref<Set<string>>(new Set())
 
 function openDetail(task: CompressTask): void {
   detailTask.value = task
@@ -141,22 +137,21 @@ function isStitchEditable(task: CompressTask): boolean {
   )
 }
 
-function isStitchExpanded(taskId: string): boolean {
-  return expandedStitchIds.value.has(taskId)
+function stitchToggleLabel(task: CompressTask): string {
+  const n = stitchCount(task)
+  const unit = task.options?.mode === 'image-stitch' ? '张' : '段'
+  return `编辑拼接顺序 · ${n} ${unit}`
 }
 
-function toggleStitchExpand(taskId: string, e?: Event): void {
-  e?.stopPropagation()
-  const next = new Set(expandedStitchIds.value)
-  if (next.has(taskId)) next.delete(taskId)
-  else next.add(taskId)
-  expandedStitchIds.value = next
-}
-
-function baseName(p: string): string {
-  const s = p.replace(/\\/g, '/')
-  const i = s.lastIndexOf('/')
-  return i >= 0 ? s.slice(i + 1) : s
+function stitchPreview(task: CompressTask): string {
+  const paths = stitchPaths(task)
+  const names = paths.slice(0, 3).map((p) => {
+    const s = p.replace(/\\/g, '/')
+    const i = s.lastIndexOf('/')
+    return i >= 0 ? s.slice(i + 1) : s
+  })
+  if (paths.length > 3) names.push(`…共 ${paths.length}`)
+  return names.join(' → ')
 }
 </script>
 
@@ -244,75 +239,31 @@ function baseName(p: string): string {
               <span class="file-name">{{ row.fileName }}</span>
             </el-tooltip>
             <template v-if="isStitchTask(row)">
-              <button
-                type="button"
-                class="stitch-count-btn"
-                :class="{ warn: stitchCount(row) < 2 }"
-                @click="toggleStitchExpand(row.id, $event)"
-              >
-                共 {{ stitchCount(row) }} 个文件
-                <span class="stitch-chevron" :class="{ open: isStitchExpanded(row.id) }">▸</span>
-              </button>
-              <div
-                v-if="isStitchExpanded(row.id)"
-                class="stitch-list"
-                @click.stop
-              >
-                <div
-                  v-for="(p, idx) in stitchPaths(row)"
-                  :key="`${row.id}-${idx}-${p}`"
-                  class="stitch-item"
+              <div class="stitch-entry" @click.stop>
+                <el-button
+                  size="small"
+                  :type="stitchCount(row) < 2 ? 'warning' : 'primary'"
+                  plain
+                  @click="emit('openStitchOrder', row)"
                 >
-                  <span class="stitch-idx">{{ idx + 1 }}.</span>
-                  <el-tooltip
-                    :content="p"
-                    placement="top"
-                    :show-after="400"
-                    :disabled="!p"
-                  >
-                    <span class="stitch-name">{{ baseName(p) }}</span>
-                  </el-tooltip>
-                  <template v-if="isStitchEditable(row)">
-                    <el-button
-                      link
-                      size="small"
-                      :disabled="idx === 0"
-                      @click="emit('reorderStitchInput', row.id, idx, 'up')"
-                    >
-                      上移
-                    </el-button>
-                    <el-button
-                      link
-                      size="small"
-                      :disabled="idx >= stitchPaths(row).length - 1"
-                      @click="emit('reorderStitchInput', row.id, idx, 'down')"
-                    >
-                      下移
-                    </el-button>
-                    <el-button
-                      link
-                      size="small"
-                      type="danger"
-                      :disabled="stitchPaths(row).length <= 1"
-                      @click="emit('removeStitchInput', row.id, idx)"
-                    >
-                      移除
-                    </el-button>
-                  </template>
-                </div>
-                <div v-if="isStitchEditable(row)" class="stitch-actions">
-                  <el-button
-                    size="small"
-                    type="primary"
-                    plain
-                    @click="emit('appendStitchInputs', row.id)"
-                  >
-                    追加文件
-                  </el-button>
-                  <span v-if="stitchCount(row) < 2" class="stitch-warn">
-                    至少 2 个文件才能启动
-                  </span>
-                </div>
+                  {{ stitchToggleLabel(row) }}
+                </el-button>
+                <span
+                  v-if="stitchPreview(row)"
+                  class="stitch-preview"
+                  :title="stitchPreview(row)"
+                >
+                  {{ stitchPreview(row) }}
+                </span>
+                <span v-if="stitchCount(row) < 2" class="stitch-warn">
+                  至少 2 个才能启动
+                </span>
+                <span
+                  v-else-if="!isStitchEditable(row)"
+                  class="stitch-order-hint"
+                >
+                  运行中仅可查看
+                </span>
               </div>
             </template>
             </div>
@@ -782,78 +733,31 @@ function baseName(p: string): string {
   max-width: 100%;
 }
 
-.stitch-count-btn {
-  display: inline-flex;
+.stitch-entry {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  margin: 0;
-  padding: 0 2px;
-  border: none;
-  background: transparent;
-  color: var(--el-color-primary);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  line-height: 1.3;
+  gap: 6px 10px;
+  margin-top: 4px;
+  max-width: 100%;
 }
 
-.stitch-count-btn.warn {
-  color: var(--el-color-warning);
-}
-
-.stitch-count-btn:hover {
-  text-decoration: underline;
-}
-
-.stitch-chevron {
-  display: inline-block;
-  font-size: 10px;
-  transition: transform 0.15s ease;
-}
-
-.stitch-chevron.open {
-  transform: rotate(90deg);
-}
-
-.stitch-list {
-  width: 100%;
+.stitch-preview {
+  flex: 1 1 140px;
+  min-width: 0;
   max-width: 360px;
-  margin-top: 2px;
-  padding: 6px 8px;
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--app-fg) 6%, transparent);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.stitch-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  font-size: var(--fs-sm);
-}
-
-.stitch-idx {
-  color: var(--app-fg-muted);
-  flex-shrink: 0;
-}
-
-.stitch-name {
-  flex: 1 1 auto;
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--app-fg-secondary);
+  font-size: var(--fs-sm);
+  color: var(--app-fg-muted);
+  line-height: 1.3;
 }
 
-.stitch-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  flex-wrap: wrap;
+.stitch-order-hint {
+  font-size: var(--fs-sm);
+  color: var(--app-fg-hint, var(--app-fg-muted));
+  line-height: 1.3;
 }
 
 .stitch-warn {

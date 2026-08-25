@@ -628,6 +628,9 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
       </template>
 
       <template v-else-if="isVideoConcatMode">
+        <span class="hint-inline">
+          片段顺序：在任务列表点「编辑拼接顺序」，弹窗内可拖拽调整
+        </span>
         <el-tooltip content="编码参数一致时可流复制，更快" placement="top" :show-after="400">
           <div class="opt-item">
             <span class="label">优先流复制</span>
@@ -984,6 +987,9 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
     </template>
 
     <div v-if="taskMode === 'image-stitch'" class="opt-row opt-row-wrap">
+      <span class="hint-inline">
+        单任务布局与顺序可在「编辑拼接顺序」弹窗中调整；下方为新建任务默认值
+      </span>
       <div class="opt-item">
         <span class="label">布局</span>
         <el-select

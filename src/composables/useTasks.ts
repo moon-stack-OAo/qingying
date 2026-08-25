@@ -567,6 +567,80 @@ export function useTasks(deps: UseTasksDeps) {
     })
   }
 
+  /**
+   * 弹窗保存：整表替换拼接顺序；图片拼接可同时写任务级布局
+   */
+  function applyStitchOrder(
+    taskId: string,
+    payload: {
+      paths: string[]
+      layout?: 'horizontal' | 'vertical' | 'grid'
+      gridCols?: number
+      gap?: number
+      background?: string
+    }
+  ): void {
+    const t = tasks.value.find((x) => x.id === taskId)
+    if (!t || !isStitchEditable(t)) {
+      ElMessage.warning('仅待处理或失败的拼接任务可编辑')
+      return
+    }
+    const next = (payload.paths || [])
+      .map((p) => (typeof p === 'string' ? p.trim() : ''))
+      .filter(Boolean)
+    if (next.length < 2) {
+      ElMessage.warning(
+        t.options?.mode === 'image-stitch'
+          ? '图片拼接至少需要 2 张图片'
+          : '视频拼接至少需要 2 段视频'
+      )
+      return
+    }
+    const mode = (t.options?.mode || currentMode()) as TaskMode
+    const patch: Partial<CompressTask> = {
+      inputPaths: next,
+      inputPath: next[0],
+      fileName: stitchFileName(mode, next.length),
+      outputPath: '',
+      error:
+        t.error &&
+        (t.error.includes('至少需要') || t.error.includes('拼接'))
+          ? undefined
+          : t.error
+    }
+    if (mode === 'image-stitch') {
+      const layout =
+        payload.layout === 'vertical' || payload.layout === 'grid'
+          ? payload.layout
+          : 'horizontal'
+      const gridCols =
+        typeof payload.gridCols === 'number' && Number.isFinite(payload.gridCols)
+          ? Math.max(1, Math.min(20, Math.round(payload.gridCols)))
+          : t.options?.image?.gridCols ?? 2
+      const gap =
+        typeof payload.gap === 'number' && Number.isFinite(payload.gap)
+          ? Math.max(0, Math.min(500, Math.round(payload.gap)))
+          : t.options?.image?.gap ?? 0
+      const background =
+        typeof payload.background === 'string' && payload.background.trim()
+          ? payload.background.trim()
+          : t.options?.image?.background || '#000000'
+      patch.options = {
+        ...t.options,
+        mode,
+        image: {
+          ...(t.options?.image || {}),
+          layout,
+          gridCols,
+          gap,
+          background
+        }
+      }
+    }
+    updateTask(taskId, patch)
+    ElMessage.success('已保存拼接顺序')
+  }
+
   function requireOutputDir(opts: CompressOptions): boolean {
     // sidecar 写出到源目录，可不选固定输出目录
     if (opts.outputDirMode === 'sidecar') return true
@@ -984,6 +1058,7 @@ export function useTasks(deps: UseTasksDeps) {
     removeStitchInput,
     appendStitchInputs,
     reorderStitchInput,
+    applyStitchOrder,
     startOne,
     startAll,
     cancelOne,
