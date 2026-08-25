@@ -23,6 +23,7 @@
     "src/**/*.vue",
     "shared/types.ts",
     "shared/brand.ts",
-    "shared/cropUiLogic.ts"
+    "shared/cropUiLogic.ts",
+    "shared/cloneForIpc.ts"
   ]
 }

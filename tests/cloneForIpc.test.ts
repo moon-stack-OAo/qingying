@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { reactive, ref } from 'vue'
-import { cloneForIpc } from '../src/utils/cloneForIpc'
+import { cloneForIpc } from '../shared/cloneForIpc'
 
 describe('cloneForIpc', () => {
   it('剥离 Vue reactive Proxy，结果可 structuredClone', () => {

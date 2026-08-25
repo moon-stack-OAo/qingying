@@ -9,7 +9,7 @@ import {
   type TaskMode,
   VIDEO_EXTENSIONS
 } from '@shared/types'
-import { cloneForIpc } from '../utils/cloneForIpc'
+import { cloneForIpc } from '@shared/cloneForIpc'
 
 export interface UseTasksDeps {
   buildOptions: () => CompressOptions
