@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { computed, ref, watch } from 'vue'
 import ImageCropCanvas from './ImageCropCanvas.vue'
-import type { CropRect } from '@shared/cropUiLogic'
+import { roundCropRect, type CropRect } from '@shared/cropUiLogic'
 
 const props = withDefaults(
   defineProps<{
@@ -212,12 +212,10 @@ function onConfirm(): void {
     error.value = '请选择有效的裁切区域（宽高须大于 0）'
     return
   }
-  emit('confirm', {
-    x: Math.round(draft.value.x),
-    y: Math.round(draft.value.y),
-    w: Math.round(draft.value.w),
-    h: Math.round(draft.value.h)
-  })
+  emit(
+    'confirm',
+    roundCropRect(draft.value, naturalWidth.value || 1, naturalHeight.value || 1)
+  )
   emit('update:modelValue', false)
 }
 

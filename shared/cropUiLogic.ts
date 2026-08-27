@@ -7,7 +7,7 @@ export interface CropRect {
 }
 
 /**
- * 显示坐标 → 原图像素（round）
+ * 显示坐标 → 原图像素（浮点，拖动中避免 round 抖动）
  * 显示区域为图片 contain 后的实际绘制区尺寸
  */
 export function displayToNatural(
@@ -29,12 +29,12 @@ export function displayToNatural(
     return { x: 0, y: 0 }
   }
   return {
-    x: Math.round((dx / dispW) * natW),
-    y: Math.round((dy / dispH) * natH)
+    x: (dx / dispW) * natW,
+    y: (dy / dispH) * natH
   }
 }
 
-/** 原图像素 → 显示坐标（round） */
+/** 原图像素 → 显示坐标（浮点） */
 export function naturalToDisplay(
   nx: number,
   ny: number,
@@ -54,23 +54,23 @@ export function naturalToDisplay(
     return { x: 0, y: 0 }
   }
   return {
-    x: Math.round((nx / natW) * dispW),
-    y: Math.round((ny / natH) * dispH)
+    x: (nx / natW) * dispW,
+    y: (ny / natH) * dispH
   }
 }
 
-/** 将裁切矩形夹紧到原图范围内，w/h 最小为 1 */
+/** 将裁切矩形夹紧到原图范围内（浮点）；w/h 最小为 1 */
 export function clampCropRect(
   rect: CropRect,
   natW: number,
   natH: number
 ): CropRect {
-  const maxW = Math.max(1, Math.floor(natW))
-  const maxH = Math.max(1, Math.floor(natH))
-  let w = Math.round(Number(rect.w))
-  let h = Math.round(Number(rect.h))
-  let x = Math.round(Number(rect.x))
-  let y = Math.round(Number(rect.y))
+  const maxW = Math.max(1, Number(natW) || 1)
+  const maxH = Math.max(1, Number(natH) || 1)
+  let w = Number(rect.w)
+  let h = Number(rect.h)
+  let x = Number(rect.x)
+  let y = Number(rect.y)
 
   if (!Number.isFinite(w) || w < 1) w = 1
   if (!Number.isFinite(h) || h < 1) h = 1
@@ -85,6 +85,20 @@ export function clampCropRect(
   y = Math.max(0, y)
 
   return { x, y, w, h }
+}
+
+/** 确认/落盘时取整像素 */
+export function roundCropRect(rect: CropRect, natW: number, natH: number): CropRect {
+  return clampCropRect(
+    {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      w: Math.round(rect.w),
+      h: Math.round(rect.h)
+    },
+    Math.max(1, Math.floor(natW)),
+    Math.max(1, Math.floor(natH))
+  )
 }
 
 /**
@@ -176,9 +190,9 @@ export function computeContainRect(
     return { left: 0, top: 0, width: 0, height: 0 }
   }
   const scale = Math.min(containerW / natW, containerH / natH)
-  const width = Math.max(1, Math.round(natW * scale))
-  const height = Math.max(1, Math.round(natH * scale))
-  const left = Math.round((containerW - width) / 2)
-  const top = Math.round((containerH - height) / 2)
+  const width = Math.max(1, natW * scale)
+  const height = Math.max(1, natH * scale)
+  const left = (containerW - width) / 2
+  const top = (containerH - height) / 2
   return { left, top, width, height }
 }

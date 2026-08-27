@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { MosaicRegion } from '@shared/types'
-import { defaultMosaicRect, type CropRect } from '@shared/cropUiLogic'
+import { defaultMosaicRect, roundCropRect, type CropRect } from '@shared/cropUiLogic'
 import ImageCropCanvas from './ImageCropCanvas.vue'
 
 const props = defineProps<{
@@ -67,7 +67,7 @@ async function loadFrame(): Promise<void> {
 }
 
 function resetDraft(): void {
-  // 有分辨率时直接落到居中 10% 框，避免清成 0 后坐标丢失、无法添加
+  // 有分辨率时直接落到居中 50% 框，避免清成 0 后坐标丢失、无法添加
   draft.value =
     naturalWidth.value > 0 && naturalHeight.value > 0
       ? defaultMosaicRect(naturalWidth.value, naturalHeight.value)
@@ -81,14 +81,19 @@ function resetDraft(): void {
 function buildRegionFromDraft(): MosaicRegion | null {
   if (!(draft.value.w > 1 && draft.value.h > 1)) return null
   if (draftEnd.value > 0 && draftEnd.value <= draftStart.value) return null
+  const rect = roundCropRect(
+    draft.value,
+    naturalWidth.value || 1,
+    naturalHeight.value || 1
+  )
   return {
     id: `mosaic-${Date.now()}-${rules.value.length + 1}`,
     startSec: Math.round(Math.max(0, draftStart.value) * 1000) / 1000,
     endSec: draftEnd.value > 0 ? Math.round(draftEnd.value * 1000) / 1000 : undefined,
-    x: Math.round(draft.value.x),
-    y: Math.round(draft.value.y),
-    w: Math.round(draft.value.w),
-    h: Math.round(draft.value.h),
+    x: rect.x,
+    y: rect.y,
+    w: rect.w,
+    h: rect.h,
     mode: draftMode.value,
     strength: Math.max(2, Math.min(128, Math.round(draftStrength.value)))
   }

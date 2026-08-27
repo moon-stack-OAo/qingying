@@ -8,6 +8,7 @@ import {
   defaultMosaicRect,
   displayToNatural,
   naturalToDisplay,
+  roundCropRect,
   type CropRect
 } from '@shared/cropUiLogic'
 
@@ -19,7 +20,7 @@ const props = withDefaults(
     modelValue: CropRect
     aspectRatio?: number | null
     disabled?: boolean
-    /** crop=居中约 80%；mosaic=居中约 10%×10% */
+    /** crop=居中约 80%；mosaic=居中约 50%×50% */
     defaultMode?: 'crop' | 'mosaic'
   }>(),
   {
@@ -52,6 +53,13 @@ type DragMode =
 const dragMode = ref<DragMode>(null)
 const dragStartClient = ref({ x: 0, y: 0 })
 const dragStartRect = ref<CropRect>({ x: 0, y: 0, w: 1, h: 1 })
+/** 固定比例角缩放时锁定主轴，避免拖动中切换导致跳变 */
+const aspectLockAxis = ref<'w' | 'h' | null>(null)
+let captureEl: HTMLElement | null = null
+let capturePointerId: number | null = null
+let pendingPointer: PointerEvent | null = null
+let rafId = 0
+let lastEmitted: CropRect | null = null
 
 const contain = computed(() =>
   computeContainRect(
@@ -94,8 +102,9 @@ const displayRect = computed(() => {
 function measure(): void {
   const el = containerRef.value
   if (!el) return
-  containerW.value = el.clientWidth
-  containerH.value = el.clientHeight
+  const box = el.getBoundingClientRect()
+  containerW.value = box.width
+  containerH.value = box.height
 }
 
 let ro: ResizeObserver | null = null
@@ -117,6 +126,8 @@ onUnmounted(() => {
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
   window.removeEventListener('pointercancel', onPointerUp)
+  cancelPendingRaf()
+  releaseCapture()
 })
 
 watch(
@@ -148,9 +159,9 @@ function ensureDefaultRect(): void {
     if (props.aspectRatio != null && props.aspectRatio > 0) {
       next = applyAspectRatio(next, props.aspectRatio, nw, nh)
     }
-    emit('update:modelValue', next)
+    emitRect(next)
   } else {
-    emit('update:modelValue', clampCropRect(v, nw, nh))
+    emitRect(clampCropRect(v, nw, nh))
   }
 }
 
@@ -162,7 +173,7 @@ watch(
     const nh = props.naturalHeight
     if (!(nw > 0 && nh > 0)) return
     const next = applyAspectRatio(props.modelValue, ar, nw, nh)
-    emit('update:modelValue', next)
+    emitRect(next)
   }
 )
 
@@ -183,6 +194,36 @@ function clientToNatural(clientX: number, clientY: number): { x: number; y: numb
   )
 }
 
+function rectChanged(a: CropRect, b: CropRect): boolean {
+  return a.x !== b.x || a.y !== b.y || a.w !== b.w || a.h !== b.h
+}
+
+function emitRect(next: CropRect): void {
+  if (lastEmitted && !rectChanged(lastEmitted, next)) return
+  lastEmitted = { ...next }
+  emit('update:modelValue', next)
+}
+
+function cancelPendingRaf(): void {
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = 0
+  }
+  pendingPointer = null
+}
+
+function releaseCapture(): void {
+  if (captureEl != null && capturePointerId != null) {
+    try {
+      captureEl.releasePointerCapture(capturePointerId)
+    } catch {
+      // ignore
+    }
+  }
+  captureEl = null
+  capturePointerId = null
+}
+
 function startDrag(mode: DragMode, e: PointerEvent): void {
   if (props.disabled || !mode) return
   e.preventDefault()
@@ -190,9 +231,24 @@ function startDrag(mode: DragMode, e: PointerEvent): void {
   dragMode.value = mode
   dragStartClient.value = { x: e.clientX, y: e.clientY }
   dragStartRect.value = { ...props.modelValue }
+  aspectLockAxis.value = null
+  lastEmitted = { ...props.modelValue }
+  cancelPendingRaf()
+
+  const target = e.currentTarget as HTMLElement | null
+  if (target) {
+    try {
+      target.setPointerCapture(e.pointerId)
+      captureEl = target
+      capturePointerId = e.pointerId
+    } catch {
+      captureEl = null
+      capturePointerId = null
+    }
+  }
 }
 
-function onPointerMove(e: PointerEvent): void {
+function applyDrag(e: PointerEvent): void {
   const mode = dragMode.value
   if (!mode || props.disabled) return
   const nw = props.naturalWidth
@@ -215,7 +271,6 @@ function onPointerMove(e: PointerEvent): void {
     x = start.x + ddx
     y = start.y + ddy
   } else {
-    // 边缘/角缩放
     if (mode.includes('e')) w = start.w + ddx
     if (mode.includes('s')) h = start.h + ddy
     if (mode.includes('w')) {
@@ -228,37 +283,30 @@ function onPointerMove(e: PointerEvent): void {
     }
 
     if (ar != null && ar > 0) {
-      // 以对角/主方向保持比例
+      const right = start.x + start.w
+      const bottom = start.y + start.h
       if (mode === 'e' || mode === 'w') {
-        h = Math.round(w / ar)
-        if (mode === 'w') {
-          // 右边缘固定
-          const right = start.x + start.w
-          x = right - w
-        }
+        h = w / ar
+        if (mode === 'w') x = right - w
         y = start.y + (start.h - h) / 2
       } else if (mode === 'n' || mode === 's') {
-        w = Math.round(h * ar)
-        if (mode === 'n') {
-          const bottom = start.y + start.h
-          y = bottom - h
-        }
+        w = h * ar
+        if (mode === 'n') y = bottom - h
         x = start.x + (start.w - w) / 2
       } else {
-        // 角：以 w 为主，再调 h
-        if (Math.abs(ddx) * ar >= Math.abs(ddy)) {
-          h = Math.round(w / ar)
+        // 角：固定对边锚点；首次有效位移锁定主轴，整段拖动不再切换
+        if (aspectLockAxis.value == null && (Math.abs(ddx) > 0.5 || Math.abs(ddy) > 0.5)) {
+          aspectLockAxis.value =
+            Math.abs(ddx) * ar >= Math.abs(ddy) ? 'w' : 'h'
+        }
+        const axis = aspectLockAxis.value ?? 'w'
+        if (axis === 'w') {
+          h = w / ar
         } else {
-          w = Math.round(h * ar)
+          w = h * ar
         }
-        if (mode.includes('w')) {
-          const right = start.x + start.w
-          x = right - w
-        }
-        if (mode.includes('n')) {
-          const bottom = start.y + start.h
-          y = bottom - h
-        }
+        if (mode.includes('w')) x = right - w
+        if (mode.includes('n')) y = bottom - h
       }
     }
   }
@@ -272,11 +320,36 @@ function onPointerMove(e: PointerEvent): void {
     h = 1
   }
 
-  emit('update:modelValue', clampCropRect({ x, y, w, h }, nw, nh))
+  emitRect(clampCropRect({ x, y, w, h }, nw, nh))
+}
+
+function flushPointerFrame(): void {
+  rafId = 0
+  const e = pendingPointer
+  pendingPointer = null
+  if (e) applyDrag(e)
+}
+
+function onPointerMove(e: PointerEvent): void {
+  if (!dragMode.value || props.disabled) return
+  pendingPointer = e
+  if (!rafId) {
+    rafId = requestAnimationFrame(flushPointerFrame)
+  }
 }
 
 function onPointerUp(): void {
+  if (dragMode.value) {
+    cancelPendingRaf()
+    const nw = props.naturalWidth
+    const nh = props.naturalHeight
+    if (nw > 0 && nh > 0) {
+      emitRect(roundCropRect(props.modelValue, nw, nh))
+    }
+  }
   dragMode.value = null
+  aspectLockAxis.value = null
+  releaseCapture()
 }
 
 const boxStyle = computed(() => {

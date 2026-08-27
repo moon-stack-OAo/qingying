@@ -186,9 +186,10 @@ function forwardDroppedFiles(files: DroppedFile[]): void {
 }
 
 function installDropCapture(): void {
+  // 捕获阶段仅 preventDefault（允许 drop），不 stopPropagation，
+  // 以便渲染进程 App/DropZone 能收到 dragenter/over/leave 更新 dragging 高亮
   const onDragOver = (e: Event): void => {
     e.preventDefault()
-    e.stopPropagation()
     const de = e as DragEvent
     try {
       if (de.dataTransfer) {

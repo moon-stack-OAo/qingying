@@ -223,6 +223,25 @@ const advancedOpen = ref(false)
 /** 视频画面裁切折叠 */
 const videoCropOpen = ref(false)
 
+/** 质量滑块本地值：拖动即时跟手，松手再 emit 持久化 */
+const imageQualityDraft = ref(props.imageQuality)
+watch(
+  () => props.imageQuality,
+  (v) => {
+    imageQualityDraft.value = v
+  }
+)
+
+function onImageQualityCommit(v: number | number[]): void {
+  const n = Array.isArray(v) ? v[0] : v
+  const next =
+    typeof n === 'number' && Number.isFinite(n)
+      ? Math.max(1, Math.min(100, Math.round(n)))
+      : imageQualityDraft.value
+  imageQualityDraft.value = next
+  emit('imageQualityChange', next)
+}
+
 /** 工具分组（视频 / 图片 / 合成） */
 const toolGroup = ref<ToolGroup>(toolGroupOfMode(props.taskMode))
 
@@ -585,21 +604,21 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
             />
           </el-select>
         </div>
-        <el-tooltip content="JPEG / WebP 有效" placement="top" :show-after="400">
-          <div class="opt-item">
+        <div class="opt-item">
+          <el-tooltip content="JPEG / WebP 有效" placement="top" :show-after="400">
             <span class="label">质量</span>
-            <el-slider
-              :model-value="imageQuality"
-              :min="1"
-              :max="100"
-              :step="1"
-              size="small"
-              class="w-quality"
-              @change="(v: number | number[]) => emit('imageQualityChange', Array.isArray(v) ? v[0] : v)"
-            />
-            <span class="hint-inline hint-inline--tight">{{ imageQuality }}</span>
-          </div>
-        </el-tooltip>
+          </el-tooltip>
+          <el-slider
+            v-model="imageQualityDraft"
+            :min="1"
+            :max="100"
+            :step="1"
+            size="small"
+            class="w-quality"
+            @change="onImageQualityCommit"
+          />
+          <span class="hint-inline hint-inline--tight">{{ imageQualityDraft }}</span>
+        </div>
         <el-tooltip content="0 = 不限制" placement="top" :show-after="400">
           <div class="opt-item">
             <span class="label">最长边</span>

@@ -52,8 +52,10 @@ const draftBackground = ref('#000000')
 
 /** 指针拖拽（Electron 下 HTML5 DnD 常失效） */
 const dragFrom = ref<number | null>(null)
-const dragOver = ref<number | null>(null)
+/** 插入指示：悬停行上方插入为该 index，下方为 index+1 */
+const insertAt = ref<number | null>(null)
 const listEl = ref<HTMLElement | null>(null)
+let autoScrollRaf = 0
 
 const isImageStitch = computed(() => props.mode === 'image-stitch')
 const dialogTitle = computed(() =>
@@ -129,28 +131,66 @@ function moveItem(from: number, to: number): void {
   draftPaths.value = next
 }
 
-function indexFromClientY(clientY: number): number | null {
+/** 根据指针 Y 得到插入位置 [0..length] */
+function insertIndexFromClientY(clientY: number): number | null {
   const root = listEl.value
   if (!root) return null
   const rows = root.querySelectorAll<HTMLElement>('[data-stitch-row]')
-  if (!rows.length) return null
+  if (!rows.length) return 0
   for (let i = 0; i < rows.length; i++) {
     const rect = rows[i].getBoundingClientRect()
     const mid = rect.top + rect.height / 2
     if (clientY < mid) return i
   }
-  return rows.length - 1
+  return rows.length
+}
+
+function cancelAutoScroll(): void {
+  if (autoScrollRaf) {
+    cancelAnimationFrame(autoScrollRaf)
+    autoScrollRaf = 0
+  }
+}
+
+function maybeAutoScroll(clientY: number): void {
+  const root = listEl.value
+  if (!root) return
+  const rect = root.getBoundingClientRect()
+  const edge = 36
+  let dy = 0
+  if (clientY < rect.top + edge) {
+    dy = -Math.ceil((rect.top + edge - clientY) / 4)
+  } else if (clientY > rect.bottom - edge) {
+    dy = Math.ceil((clientY - (rect.bottom - edge)) / 4)
+  }
+  if (!dy) {
+    cancelAutoScroll()
+    return
+  }
+  if (autoScrollRaf) return
+  const step = (): void => {
+    autoScrollRaf = 0
+    if (dragFrom.value == null || !listEl.value) return
+    listEl.value.scrollTop += dy
+    // 继续滚动直到离开边缘（下一 pointermove 会重新判定）
+  }
+  autoScrollRaf = requestAnimationFrame(step)
 }
 
 function onPointerMove(e: PointerEvent): void {
   if (dragFrom.value == null) return
-  const over = indexFromClientY(e.clientY)
+  maybeAutoScroll(e.clientY)
+  const over = insertIndexFromClientY(e.clientY)
   if (over == null) return
-  dragOver.value = over
-  if (over !== dragFrom.value) {
-    const from = dragFrom.value
-    moveItem(from, over)
-    dragFrom.value = over
+  insertAt.value = over
+
+  // 将拖拽项移到插入槽对应位置（插入 index 在源之后时需 -1）
+  const from = dragFrom.value
+  let to = over
+  if (to > from) to -= 1
+  if (to !== from) {
+    moveItem(from, to)
+    dragFrom.value = to
   }
 }
 
@@ -158,8 +198,9 @@ function stopPointerDrag(): void {
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
   window.removeEventListener('pointercancel', onPointerUp)
+  cancelAutoScroll()
   dragFrom.value = null
-  dragOver.value = null
+  insertAt.value = null
 }
 
 function onPointerUp(): void {
@@ -172,10 +213,15 @@ function onHandlePointerDown(index: number, e: PointerEvent): void {
   e.preventDefault()
   e.stopPropagation()
   dragFrom.value = index
-  dragOver.value = index
+  insertAt.value = index
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp)
   window.addEventListener('pointercancel', onPointerUp)
+  try {
+    ;(e.currentTarget as HTMLElement | null)?.setPointerCapture?.(e.pointerId)
+  } catch {
+    // ignore
+  }
 }
 
 onBeforeUnmount(() => {
@@ -220,6 +266,17 @@ function confirm(): void {
   }
   emit('confirm', payload)
   visible.value = false
+}
+
+function showInsertLine(idx: number): boolean {
+  if (insertAt.value == null || dragFrom.value == null) return false
+  // 插入线画在目标行顶部；末尾用最后一行底部
+  return insertAt.value === idx
+}
+
+function showInsertAfterLast(): boolean {
+  if (insertAt.value == null || dragFrom.value == null) return false
+  return insertAt.value === draftPaths.value.length
 }
 </script>
 
@@ -296,14 +353,12 @@ function confirm(): void {
     <div ref="listEl" class="list">
       <div
         v-for="(p, idx) in draftPaths"
-        :key="p"
+        :key="`${idx}\0${p}`"
         class="row"
         data-stitch-row
-        :class="{
-          'is-dragging': dragFrom === idx,
-          'is-over': dragOver === idx && dragFrom !== idx
-        }"
+        :class="{ 'is-dragging': dragFrom === idx }"
       >
+        <div v-if="showInsertLine(idx)" class="insert-line" aria-hidden="true" />
         <button
           v-if="editable"
           type="button"
@@ -342,6 +397,7 @@ function confirm(): void {
           </el-button>
         </template>
       </div>
+      <div v-if="showInsertAfterLast()" class="insert-line is-tail" aria-hidden="true" />
       <div v-if="!draftPaths.length" class="empty">暂无文件</div>
     </div>
 
@@ -413,6 +469,7 @@ function confirm(): void {
 }
 
 .row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -430,8 +487,22 @@ function confirm(): void {
   opacity: 0.45;
 }
 
-.row.is-over {
-  background: color-mix(in srgb, var(--el-color-primary) 14%, transparent);
+.insert-line {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: -1px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--el-color-primary, #409eff);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.insert-line.is-tail {
+  position: relative;
+  top: auto;
+  margin: 2px 4px 4px;
 }
 
 .handle {

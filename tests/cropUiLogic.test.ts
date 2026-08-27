@@ -6,11 +6,12 @@ import {
   defaultCropRect,
   defaultMosaicRect,
   displayToNatural,
-  naturalToDisplay
+  naturalToDisplay,
+  roundCropRect
 } from '../shared/cropUiLogic'
 
 describe('displayToNatural / naturalToDisplay', () => {
-  it('往返映射（整像素）', () => {
+  it('往返映射（浮点）', () => {
     const dispW = 800
     const dispH = 600
     const natW = 4000
@@ -19,6 +20,12 @@ describe('displayToNatural / naturalToDisplay', () => {
     expect(n).toEqual({x: 1000, y: 750})
     const d = naturalToDisplay(n.x, n.y, dispW, dispH, natW, natH)
     expect(d).toEqual({x: 200, y: 150})
+  })
+
+  it('亚像素不提前 round', () => {
+    const n = displayToNatural(100.5, 50.25, 800, 600, 4000, 3000)
+    expect(n.x).toBeCloseTo(502.5, 5)
+    expect(n.y).toBeCloseTo(251.25, 5)
   })
 
   it('非法尺寸返回 0', () => {
@@ -52,6 +59,25 @@ describe('clampCropRect', () => {
       y: 80,
       w: 20,
       h: 20
+    })
+  })
+
+  it('拖动中保留浮点', () => {
+    const r = clampCropRect({x: 10.4, y: 20.6, w: 30.2, h: 40.8}, 100, 100)
+    expect(r.x).toBeCloseTo(10.4, 5)
+    expect(r.y).toBeCloseTo(20.6, 5)
+    expect(r.w).toBeCloseTo(30.2, 5)
+    expect(r.h).toBeCloseTo(40.8, 5)
+  })
+})
+
+describe('roundCropRect', () => {
+  it('确认时取整并夹紧', () => {
+    expect(roundCropRect({x: 10.6, y: 20.4, w: 30.5, h: 40.2}, 100, 100)).toEqual({
+      x: 11,
+      y: 20,
+      w: 31,
+      h: 40
     })
   })
 })
