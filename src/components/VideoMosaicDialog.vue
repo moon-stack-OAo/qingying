@@ -1,8 +1,8 @@
 <script lang="ts" setup>
-import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import type { MosaicRegion } from '@shared/types'
-import { defaultMosaicRect, roundCropRect, type CropRect } from '@shared/cropUiLogic'
+import {computed, ref, watch} from 'vue'
+import {ElMessage} from 'element-plus'
+import type {MosaicRegion} from '@shared/types'
+import {type CropRect, defaultMosaicRect, roundCropRect} from '@shared/cropUiLogic'
 import ImageCropCanvas from './ImageCropCanvas.vue'
 
 const props = defineProps<{
@@ -145,148 +145,229 @@ watch(
 </script>
 
 <template>
-  <el-dialog v-model="visible" title="视频打码" width="760px" destroy-on-close append-to-body>
-    <div class="toolbar">
-      <span>预览时间(秒)</span>
-      <el-input-number
-        v-model="timeSec"
-        :min="0"
-        :max="86400"
-        :step="0.5"
-        :precision="2"
-        size="small"
-        controls-position="right"
-      />
-      <el-button size="small" :loading="loading" @click="loadFrame">重新抽帧</el-button>
-      <span v-if="naturalWidth && naturalHeight" class="muted">
-        原视频 {{ naturalWidth }} x {{ naturalHeight }}
-      </span>
-    </div>
-
-    <el-alert
-      v-if="frameError && !dataUrl"
-      :title="frameError"
-      type="error"
-      :closable="false"
-      show-icon
-      class="frame-alert"
-    />
-
-    <!-- 抽帧中保留已有预览，避免提示/加载态把画面整块顶掉 -->
-    <div v-if="loading && !dataUrl" class="status">加载预览中...</div>
-    <template v-else-if="dataUrl">
-      <div class="preview-wrap" :class="{ 'is-loading': loading }">
-        <ImageCropCanvas
-          v-model="draft"
-          :src="dataUrl"
-          :natural-width="naturalWidth"
-          :natural-height="naturalHeight"
-          :disabled="loading"
-          default-mode="mosaic"
-        />
-        <div v-if="loading" class="preview-loading">正在抽帧...</div>
-      </div>
-      <el-alert
-        v-if="frameError"
-        :title="frameError"
-        type="error"
-        :closable="true"
-        show-icon
-        class="frame-alert"
-        @close="frameError = ''"
-      />
-      <div class="toolbar rule-form">
-        <span>开始</span>
-        <el-input-number
-          v-model="draftStart"
-          :min="0"
-          :max="86400"
-          :step="0.5"
-          :precision="2"
-          size="small"
-          controls-position="right"
-        />
-        <span>结束</span>
-        <el-tooltip content="0 = 到视频结尾（全程打码）" placement="top" :show-after="400">
-          <el-input-number
-            v-model="draftEnd"
-            :min="0"
-            :max="86400"
-            :step="0.5"
-            :precision="2"
-            size="small"
-            controls-position="right"
-          />
-        </el-tooltip>
-        <span class="muted">0=到结尾</span>
-        <el-select v-model="draftMode" size="small" class="mode-select">
-          <el-option label="像素化" value="pixelate" />
-          <el-option label="模糊" value="blur" />
-        </el-select>
-        <el-input-number
-          v-model="draftStrength"
-          :min="2"
-          :max="128"
-          :step="1"
-          size="small"
-          controls-position="right"
-        />
-        <el-button type="primary" size="small" :disabled="loading" @click="addRule">
-          添加区域
-        </el-button>
+  <el-dialog
+    v-model="visible"
+    align-center
+    append-to-body
+    class="video-mosaic-dialog"
+    destroy-on-close
+    width="min(920px, 96vw)"
+  >
+    <template #header>
+      <div class="dlg-head-text">
+        <div class="dlg-title">编辑打码区域</div>
+        <div class="dlg-sub">
+          在画面框选区域 · 已添加 {{ rules.length }}
+          <template v-if="naturalWidth && naturalHeight">
+            · {{ naturalWidth }} × {{ naturalHeight }}
+          </template>
+        </div>
       </div>
     </template>
 
-    <div v-if="rules.length" class="rules">
-      <div v-for="(rule, index) in rules" :key="rule.id" class="rule-row">
-        <span>
-          {{ index + 1 }}. {{ rule.mode === 'blur' ? '模糊' : '像素化' }}
-          {{ rule.w }} x {{ rule.h }} @ {{ rule.x }},{{ rule.y }}
-        </span>
-        <span>{{ rule.startSec }}s - {{ rule.endSec || '结束' }}</span>
-        <el-button text type="danger" size="small" @click="removeRule(index)">删除</el-button>
+    <div class="mosaic-layout">
+      <div class="mosaic-preview-col">
+        <div class="toolbar">
+          <span class="label">预览时间(秒)</span>
+          <el-input-number
+            v-model="timeSec"
+            :max="86400"
+            :min="0"
+            :precision="2"
+            :step="0.5"
+            controls-position="right"
+            size="small"
+          />
+          <el-button :loading="loading" plain size="small" @click="loadFrame">
+            重新抽帧
+          </el-button>
+        </div>
+
+        <el-alert
+          v-if="frameError && !dataUrl"
+          :closable="false"
+          :title="frameError"
+          class="frame-alert"
+          show-icon
+          type="error"
+        />
+
+        <div v-if="loading && !dataUrl" class="status">加载预览中…</div>
+        <template v-else-if="dataUrl">
+          <div :class="{ 'is-loading': loading }" class="preview-wrap">
+            <ImageCropCanvas
+              v-model="draft"
+              :disabled="loading"
+              :natural-height="naturalHeight"
+              :natural-width="naturalWidth"
+              :src="dataUrl"
+              default-mode="mosaic"
+            />
+            <div v-if="loading" class="preview-loading">正在抽帧…</div>
+          </div>
+          <el-alert
+            v-if="frameError"
+            :closable="true"
+            :title="frameError"
+            class="frame-alert"
+            show-icon
+            type="error"
+            @close="frameError = ''"
+          />
+          <div class="toolbar rule-form">
+            <span class="label">开始</span>
+            <el-input-number
+              v-model="draftStart"
+              :max="86400"
+              :min="0"
+              :precision="2"
+              :step="0.5"
+              controls-position="right"
+              size="small"
+            />
+            <span class="label">结束</span>
+            <el-tooltip :show-after="400" content="0 = 到视频结尾（全程打码）" placement="top">
+              <el-input-number
+                v-model="draftEnd"
+                :max="86400"
+                :min="0"
+                :precision="2"
+                :step="0.5"
+                controls-position="right"
+                size="small"
+              />
+            </el-tooltip>
+            <span class="muted">0=到结尾</span>
+            <el-select v-model="draftMode" class="mode-select" size="small">
+              <el-option label="像素化" value="pixelate" />
+              <el-option label="模糊" value="blur" />
+            </el-select>
+            <el-input-number
+              v-model="draftStrength"
+              :max="128"
+              :min="2"
+              :step="1"
+              controls-position="right"
+              size="small"
+            />
+            <el-button :disabled="loading" plain size="small" type="primary" @click="addRule">
+              添加区域
+            </el-button>
+          </div>
+        </template>
       </div>
+
+      <aside class="mosaic-side">
+        <div class="side-h">
+          <span>区域列表 · {{ rules.length }}</span>
+        </div>
+        <div v-if="rules.length" class="region-list">
+          <div v-for="(rule, index) in rules" :key="rule.id" class="region-card">
+            <div class="region-main">
+              <div class="region-name">
+                区域 {{ index + 1 }} · {{ rule.mode === 'blur' ? '模糊' : '像素化' }}
+              </div>
+              <div class="region-meta">
+                {{ rule.w }} × {{ rule.h }} @ {{ rule.x }},{{ rule.y }}
+                · {{ rule.startSec }}s–{{ rule.endSec || '结尾' }}
+              </div>
+            </div>
+            <el-button size="small" text type="danger" @click="removeRule(index)">
+              删除
+            </el-button>
+          </div>
+        </div>
+        <div v-else class="region-empty">框选后点「添加区域」写入列表</div>
+      </aside>
     </div>
+
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" @click="confirm">保存打码规则</el-button>
+      <div class="dlg-foot">
+        <span class="dlg-foot-hint">未点添加的当前框选也会一并保存</span>
+        <el-button @click="visible = false">取消</el-button>
+        <el-button type="primary" @click="confirm">保存区域</el-button>
+      </div>
     </template>
   </el-dialog>
 </template>
 
 <style scoped>
+.dlg-head-text {
+  min-width: 0;
+  padding-right: 28px;
+}
+
+.dlg-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--app-fg);
+  line-height: 1.3;
+}
+
+.dlg-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--app-fg-muted);
+  line-height: 1.4;
+}
+
+.mosaic-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 12px;
+  min-height: 0;
+}
+
+.mosaic-preview-col {
+  min-width: 0;
+}
+
 .toolbar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 10px;
-  font-size: var(--fs-sm, 12px);
-  color: var(--app-fg-secondary, #666);
+  font-size: 12px;
+  color: var(--app-fg-secondary);
 }
+
+.toolbar .label {
+  color: var(--app-fg-muted);
+}
+
 .rule-form {
   margin-top: 10px;
 }
+
 .mode-select {
   width: 92px;
 }
+
 .status {
   padding: 48px;
   text-align: center;
-  color: var(--app-fg-muted, #888);
+  color: var(--app-fg-muted);
 }
+
 .muted {
-  color: var(--app-fg-muted, #888);
+  color: var(--app-fg-muted);
 }
+
 .frame-alert {
   margin-bottom: 10px;
 }
+
 .preview-wrap {
   position: relative;
 }
+
 .preview-wrap.is-loading {
   opacity: 0.72;
 }
+
 .preview-loading {
   position: absolute;
   inset: 0;
@@ -294,26 +375,99 @@ watch(
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  font-size: var(--fs-sm, 12px);
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
-  background: rgba(0, 0, 0, 0.18);
-  border-radius: var(--radius-xs, 4px);
+  font-size: 12px;
+  color: var(--accent-fg, #fff);
+  background: color-mix(in oklch, var(--fg) 28%, transparent);
+  border-radius: var(--radius, 8px);
 }
-.rules {
-  margin-top: 12px;
-  border-top: 1px solid var(--panel-border);
+
+.mosaic-side {
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--surface-2, var(--notes-bg));
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  max-height: min(520px, 60vh);
+  overflow: hidden;
 }
-.rule-row {
+
+.side-h {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 7px 0;
-  font-size: var(--fs-sm, 12px);
-  font-variant-numeric: tabular-nums;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--panel-border);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--app-fg);
 }
-.rule-row span:first-child {
+
+.region-list {
+  overflow: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.region-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface, var(--panel-bg));
+}
+
+.region-main {
   flex: 1;
   min-width: 0;
+}
+
+.region-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--app-fg);
+}
+
+.region-meta {
+  margin-top: 2px;
+  color: var(--app-fg-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.region-empty {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--app-fg-muted);
+}
+
+.dlg-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+
+.dlg-foot-hint {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--app-fg-muted);
+}
+
+@media (max-width: 720px) {
+  .mosaic-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .mosaic-side {
+    max-height: 200px;
+  }
 }
 </style>

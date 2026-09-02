@@ -1,7 +1,7 @@
 <script lang="ts" setup>
-import { computed } from 'vue'
-import { UploadFilled } from '@element-plus/icons-vue'
-import type { TaskMode } from '@shared/types'
+import {computed} from 'vue'
+import {UploadFilled} from '@element-plus/icons-vue'
+import type {TaskMode} from '@shared/types'
 
 const props = defineProps<{
   dragging: boolean
@@ -19,31 +19,33 @@ const emit = defineEmits<{
 const title = computed(() => {
   const m = props.taskMode || 'compress'
   if (props.compact) {
-    if (m === 'image' || m === 'image-crop') return '点击或拖拽继续添加图片'
-    if (m === 'image-stitch') return '点击或拖拽添加多张图片（一次多选=一组拼接）'
-    if (m === 'video-concat') return '点击或拖拽添加多段视频（一次多选=一组拼接）'
-    if (m === 'media-compose') return '点击或拖拽添加主视频（片头/片尾/叠加图在选项中设置）'
-    if (m === 'video-mosaic') return '打码模式仅支持单个视频'
-    if (m === 'audio') return '点击或拖拽继续添加视频'
-    return '点击或拖拽继续添加视频'
+    if (m === 'image' || m === 'image-crop') return '拖入追加 · 或点击添加图片'
+    if (m === 'image-stitch') return '拖入追加 · 多选即一组拼接'
+    if (m === 'video-concat') return '拖入追加 · 多选即一组拼接'
+    if (m === 'media-compose') return '拖入追加主视频'
+    if (m === 'video-mosaic') return '打码仅支持单个视频'
+    if (m === 'audio') return '拖入追加 · 或点击添加视频'
+    return '拖入追加 · 或点击添加视频'
   }
-  if (m === 'image' || m === 'image-crop') return '添加图片开始处理'
-  if (m === 'image-stitch') return '添加多张图片开始拼接'
-  if (m === 'video-concat') return '添加多段视频开始拼接'
-  if (m === 'media-compose') return '添加主视频开始混剪（图片在选项中选择）'
-  if (m === 'video-mosaic') return '添加单个视频开始打码'
-  if (m === 'audio') return '添加视频抽取音频'
-  return '添加视频开始处理'
+  if (m === 'image' || m === 'image-crop') return '拖入图片到此处'
+  if (m === 'image-stitch') return '拖入多张图片到此处'
+  if (m === 'video-concat') return '拖入多段视频到此处'
+  if (m === 'media-compose') return '拖入主视频到此处'
+  if (m === 'video-mosaic') return '拖入单个视频到此处'
+  if (m === 'audio') return '拖入视频到此处'
+  return '拖入视频到此处'
 })
 
 const hint = computed(() => {
   const m = props.taskMode || 'compress'
   let base =
     m === 'image' || m === 'image-crop' || m === 'image-stitch'
-      ? '支持 jpg / png / webp / bmp / tiff 等 · 可拖到窗口任意位置'
-      : '支持 mp4 / mkv / mov / avi / webm 等 · 可拖到窗口任意位置'
+      ? '支持 JPG / PNG / WebP / BMP / TIFF · 可拖到窗口任意位置'
+      : '支持 MP4 / MKV / MOV / AVI / WebM · 可拖到窗口任意位置'
   if (m === 'video-mosaic') {
-    base += ' · 仅支持单个视频'
+    base = '仅支持单个视频 · 可拖到窗口任意位置'
+  } else if (m === 'media-compose') {
+    base += ' · 片头/片尾/叠加图在选项中设置'
   } else if (props.showTaskEditHint) {
     base += ' · 选中任务可单独编辑裁切/混剪'
   }
@@ -58,13 +60,13 @@ const step1 = computed(() => {
 
 const step2 = computed(() => {
   const m = props.taskMode || 'compress'
-  if (m === 'video-mosaic') return '编辑打码区域'
+  if (m === 'video-mosaic') return '编辑区域'
   return '确认选项 / 输出'
 })
 
 const step3 = computed(() => {
   const m = props.taskMode || 'compress'
-  if (m === 'video-mosaic') return '开始导出'
+  if (m === 'video-mosaic') return '开始打码'
   return '全部开始'
 })
 

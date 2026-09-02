@@ -1,7 +1,7 @@
 <script lang="ts" setup>
-import { computed, ref, watch } from 'vue'
+import {computed, ref, watch} from 'vue'
 import ImageCropCanvas from './ImageCropCanvas.vue'
-import { roundCropRect, type CropRect } from '@shared/cropUiLogic'
+import {type CropRect, roundCropRect} from '@shared/cropUiLogic'
 
 const props = withDefaults(
   defineProps<{
@@ -25,7 +25,7 @@ const props = withDefaults(
     frameTimeSec?: number
   }>(),
   {
-    title: '可视化裁切',
+    title: '图片裁切',
     hint: '',
     initialDataUrl: '',
     naturalWidth: 0,
@@ -227,13 +227,23 @@ function onCancel(): void {
 <template>
   <el-dialog
     v-model="visible"
-    :title="title"
-    width="720px"
+    align-center
     destroy-on-close
     append-to-body
     class="image-crop-dialog"
+    width="min(920px, 96vw)"
   >
-    <p v-if="hint" class="crop-dialog-hint">{{ hint }}</p>
+    <template #header>
+      <div class="dlg-head-text">
+        <div class="dlg-title">{{ title }}</div>
+        <div v-if="sizeLabel || hint" class="dlg-sub">
+          <template v-if="sizeLabel">原图 {{ sizeLabel }}</template>
+          <template v-if="sizeLabel && hint"> · </template>
+          <template v-if="hint">{{ hint }}</template>
+        </div>
+      </div>
+    </template>
+
     <div v-if="loading" class="crop-dialog-status">加载预览中…</div>
     <el-alert
       v-else-if="error"
@@ -255,7 +265,7 @@ function onCancel(): void {
             {{ opt.label }}
           </el-radio-button>
         </el-radio-group>
-        <span v-if="sizeLabel" class="muted">原图 {{ sizeLabel }}</span>
+        <span class="toolbar-hint">拖拽框边缘改尺寸；框内拖动改位置</span>
       </div>
       <div v-if="isVideoMode" class="crop-dialog-toolbar">
         <span class="label">时间点(秒)</span>
@@ -269,7 +279,7 @@ function onCancel(): void {
           controls-position="right"
           class="w-time"
         />
-        <el-button size="small" :loading="loading" @click="onRefreshFrame">
+        <el-button :loading="loading" plain size="small" @click="onRefreshFrame">
           重新抽帧
         </el-button>
       </div>
@@ -290,36 +300,56 @@ function onCancel(): void {
     <div v-else class="crop-dialog-status muted">无预览</div>
 
     <template #footer>
-      <el-button @click="onCancel">取消</el-button>
-      <el-button
-        type="primary"
-        :disabled="loading || !!error || !(draft.w > 0 && draft.h > 0)"
-        @click="onConfirm"
-      >
-        确定
-      </el-button>
+      <div class="dlg-foot">
+        <span class="dlg-foot-hint">取消不写入参数</span>
+        <el-button @click="onCancel">取消</el-button>
+        <el-button
+          :disabled="loading || !!error || !(draft.w > 0 && draft.h > 0)"
+          type="primary"
+          @click="onConfirm"
+        >
+          确认裁切
+        </el-button>
+      </div>
     </template>
   </el-dialog>
 </template>
 
 <style scoped>
-.crop-dialog-hint {
-  margin: 0 0 10px;
-  font-size: var(--fs-sm, 12px);
-  color: var(--app-fg-muted, #888);
-  line-height: 1.45;
+.dlg-head-text {
+  min-width: 0;
+  padding-right: 28px;
+}
+
+.dlg-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--app-fg);
+  line-height: 1.3;
+}
+
+.dlg-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--app-fg-muted);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .crop-dialog-status {
   padding: 48px 16px;
   text-align: center;
-  color: var(--app-fg-secondary, #666);
-  font-size: var(--fs-md, 13px);
+  color: var(--app-fg-secondary);
+  font-size: var(--fs-sm, 13px);
 }
 
 .crop-dialog-status.muted,
 .muted {
-  color: var(--app-fg-muted, #888);
+  color: var(--app-fg-muted);
 }
 
 .crop-dialog-alert {
@@ -335,8 +365,13 @@ function onCancel(): void {
 }
 
 .crop-dialog-toolbar .label {
-  font-size: var(--fs-sm, 12px);
-  color: var(--app-fg-secondary, #666);
+  font-size: 12px;
+  color: var(--app-fg-muted);
+}
+
+.toolbar-hint {
+  font-size: 12px;
+  color: var(--app-fg-muted);
 }
 
 .crop-dialog-nums {
@@ -344,9 +379,24 @@ function onCancel(): void {
   flex-wrap: wrap;
   gap: 12px 16px;
   margin-top: 10px;
-  font-size: var(--fs-sm, 12px);
-  color: var(--app-fg-secondary, #666);
+  font-size: 12px;
+  color: var(--app-fg-muted);
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.dlg-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+
+.dlg-foot-hint {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--app-fg-muted);
 }
 
 .w-time {

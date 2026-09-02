@@ -1,7 +1,7 @@
 <script lang="ts" setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import { IMAGE_LAYOUT_OPTIONS } from '@shared/types'
+import {computed, onBeforeUnmount, ref, watch} from 'vue'
+import {ElMessage} from 'element-plus'
+import {IMAGE_LAYOUT_OPTIONS} from '@shared/types'
 
 export type StitchLayout = 'horizontal' | 'vertical' | 'grid'
 
@@ -58,8 +58,9 @@ const listEl = ref<HTMLElement | null>(null)
 let autoScrollRaf = 0
 
 const isImageStitch = computed(() => props.mode === 'image-stitch')
-const dialogTitle = computed(() =>
-  isImageStitch.value ? '编辑图片拼接顺序' : '编辑视频拼接顺序'
+const dialogTitle = '调整拼接顺序'
+const dialogSub = computed(() =>
+  isImageStitch.value ? '图片拼接 · 自上而下即输出顺序' : '视频拼接 · 自上而下即输出顺序'
 )
 const unitLabel = computed(() => (isImageStitch.value ? '张' : '段'))
 
@@ -283,15 +284,23 @@ function showInsertAfterLast(): boolean {
 <template>
   <el-dialog
     v-model="visible"
-    :title="dialogTitle"
-    width="560px"
+    align-center
     destroy-on-close
     append-to-body
+    class="stitch-order-dialog"
+    width="min(640px, 96vw)"
   >
+    <template #header>
+      <div class="dlg-head-text">
+        <div class="dlg-title">{{ dialogTitle }}</div>
+        <div class="dlg-sub">{{ dialogSub }}</div>
+      </div>
+    </template>
+
     <p class="hint">
       {{
         editable
-          ? `按住左侧 ⋮⋮ 拖动调整${unitLabel}顺序（自上而下即拼接顺序）；也可用上移/下移`
+          ? `按住左侧把手拖动调整${unitLabel}顺序；也可用上移/下移`
           : '当前任务不可编辑顺序'
       }}
     </p>
@@ -411,19 +420,43 @@ function showInsertAfterLast(): boolean {
     </div>
 
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :disabled="!editable" @click="confirm">
-        保存
-      </el-button>
+      <div class="dlg-foot">
+        <span class="dlg-foot-hint">顺序写入当前任务批次</span>
+        <el-button @click="visible = false">取消</el-button>
+        <el-button :disabled="!editable" type="primary" @click="confirm">
+          应用顺序
+        </el-button>
+      </div>
     </template>
   </el-dialog>
 </template>
 
 <style scoped>
+.dlg-head-text {
+  min-width: 0;
+  padding-right: 28px;
+}
+
+.dlg-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--app-fg);
+  line-height: 1.3;
+}
+
+.dlg-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--app-fg-muted);
+  line-height: 1.4;
+}
+
 .hint {
   margin: 0 0 12px;
-  font-size: var(--fs-sm, 12px);
-  color: var(--app-fg-muted, #888);
+  font-size: 12px;
+  color: var(--app-fg-muted);
   line-height: 1.45;
 }
 
@@ -442,14 +475,14 @@ function showInsertAfterLast(): boolean {
 }
 
 .label {
-  font-size: var(--fs-sm, 12px);
-  color: var(--app-fg-secondary, #666);
+  font-size: 12px;
+  color: var(--app-fg-muted);
   white-space: nowrap;
 }
 
 .unit {
-  font-size: var(--fs-sm, 12px);
-  color: var(--app-fg-muted, #888);
+  font-size: 12px;
+  color: var(--app-fg-muted);
 }
 
 .w-layout {
@@ -463,24 +496,26 @@ function showInsertAfterLast(): boolean {
 .list {
   max-height: min(420px, 52vh);
   overflow: auto;
-  border: 1px solid var(--panel-border, #e5e5e5);
-  border-radius: var(--radius-xs, 4px);
-  padding: 4px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface, var(--panel-bg));
 }
 
 .row {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 8px;
-  border-radius: var(--radius-xs, 4px);
-  font-size: var(--fs-sm, 12px);
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2, var(--notes-bg));
+  font-size: 13px;
   user-select: none;
-}
-
-.row + .row {
-  margin-top: 2px;
 }
 
 .row.is-dragging {
@@ -494,7 +529,7 @@ function showInsertAfterLast(): boolean {
   top: -1px;
   height: 2px;
   border-radius: 1px;
-  background: var(--el-color-primary, #409eff);
+  background: var(--accent, var(--primary));
   pointer-events: none;
   z-index: 2;
 }
@@ -508,23 +543,26 @@ function showInsertAfterLast(): boolean {
 .handle {
   flex-shrink: 0;
   margin: 0;
-  padding: 2px 4px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--app-fg-muted, #888);
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  border: 1px dashed var(--panel-border);
+  border-radius: var(--radius-sm);
+  background: var(--bg, var(--app-bg));
+  color: var(--app-fg-muted);
   cursor: grab;
   letter-spacing: -2px;
-  width: 22px;
   text-align: center;
-  line-height: 1;
+  line-height: 28px;
   touch-action: none;
   user-select: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
 }
 
 .handle:hover {
-  background: color-mix(in srgb, var(--app-fg) 8%, transparent);
-  color: var(--app-fg-secondary, #666);
+  background: var(--fg-soft, color-mix(in oklch, var(--fg) 5%, transparent));
+  color: var(--app-fg);
 }
 
 .handle:active {
@@ -538,9 +576,11 @@ function showInsertAfterLast(): boolean {
 
 .idx {
   flex-shrink: 0;
-  color: var(--app-fg-muted, #888);
+  color: var(--app-fg-muted);
   font-variant-numeric: tabular-nums;
   min-width: 1.6em;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
 }
 
 .name {
@@ -549,13 +589,15 @@ function showInsertAfterLast(): boolean {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--app-fg-secondary, #666);
+  color: var(--app-fg);
+  font-weight: 600;
+  font-size: 13px;
 }
 
 .empty {
   padding: 28px;
   text-align: center;
-  color: var(--app-fg-muted, #888);
+  color: var(--app-fg-muted);
 }
 
 .footer-extra {
@@ -567,7 +609,21 @@ function showInsertAfterLast(): boolean {
 }
 
 .warn {
-  font-size: var(--fs-sm, 12px);
-  color: var(--el-color-warning);
+  font-size: 12px;
+  color: var(--warn, var(--status-warn));
+}
+
+.dlg-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+
+.dlg-foot-hint {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--app-fg-muted);
 }
 </style>

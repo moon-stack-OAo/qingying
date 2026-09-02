@@ -9,13 +9,12 @@ import {
   sizeCompareClass,
   sizeCompareText,
   statusLabel,
-  statusType
+  statusPillClass
 } from '../utils/taskUi'
 import {useTaskThumbs} from '../composables/useTaskThumbs'
 
 const props = defineProps<{
   tasks: CompressTask[]
-  hasPending: boolean
   hasActive: boolean
   selectedTaskId?: string | null
 }>()
@@ -52,7 +51,6 @@ const emit = defineEmits<{
   openOutput: [task: CompressTask]
   showInFolder: [task: CompressTask]
   selectTask: [taskId: string]
-  startAll: []
   cancelAll: []
   clearFinished: []
   clearAll: []
@@ -164,14 +162,6 @@ function stitchPreview(task: CompressTask): string {
       </div>
       <div class="panel-title-actions">
         <el-button
-          :disabled="!hasPending && !tasks.length"
-          size="small"
-          type="success"
-          @click="emit('startAll')"
-        >
-          全部开始
-        </el-button>
-        <el-button
           :disabled="!hasActive"
           size="small"
           type="warning"
@@ -281,11 +271,11 @@ function stitchPreview(task: CompressTask): string {
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="90">
+      <el-table-column label="状态" width="88">
         <template #default="{ row }">
-          <el-tag :type="statusType(row.status)" size="small">
+          <span :class="statusPillClass(row.status)" class="status-pill">
             {{ statusLabel(row.status) }}
-          </el-tag>
+          </span>
         </template>
       </el-table-column>
       <el-table-column label="进度" min-width="130">
@@ -491,6 +481,10 @@ function stitchPreview(task: CompressTask): string {
 </template>
 
 <style scoped>
+.panel-title {
+  flex-shrink: 0;
+}
+
 .panel-title-left {
   display: flex;
   align-items: baseline;
@@ -508,21 +502,24 @@ function stitchPreview(task: CompressTask): string {
 }
 
 .task-table {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .task-table-body {
-  flex: 1;
-  min-height: 180px;
+  flex: 1 1 0;
+  min-height: 0;
   overflow: hidden;
 }
 
 .meta-text {
   font-size: var(--fs-sm);
   color: var(--app-fg-secondary);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
 }
 
 .meta-muted {
@@ -533,6 +530,49 @@ function stitchPreview(task: CompressTask): string {
 .meta-ok {
   font-size: var(--fs-sm);
   color: var(--status-ok);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.pill-ok {
+  color: var(--ok);
+  background: var(--ok-soft);
+  border-color: color-mix(in oklch, var(--ok) 28%, var(--border));
+}
+
+.pill-warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-color: color-mix(in oklch, var(--warn) 28%, var(--border));
+}
+
+.pill-danger {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: color-mix(in oklch, var(--danger) 28%, var(--border));
+}
+
+.pill-accent {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in oklch, var(--accent) 28%, var(--border));
+}
+
+.pill-muted {
+  color: var(--muted);
+  background: var(--fg-soft);
+  border-color: var(--border);
 }
 
 .detail-block {
@@ -589,12 +629,57 @@ function stitchPreview(task: CompressTask): string {
   color: var(--status-bad);
 }
 
-:deep(.task-row-selected > td.el-table__cell) {
-  background: color-mix(in srgb, var(--el-color-primary) 14%, transparent) !important;
+/* EP2 sticky 固定列：实底不透字 + 左侧阴影 */
+:deep(th.el-table-fixed-column--right),
+:deep(td.el-table-fixed-column--right) {
+  background: var(--panel-bg) !important;
+  background-clip: padding-box !important;
 }
 
-:deep(.el-table__body tr.task-row-selected:hover > td.el-table__cell) {
-  background: color-mix(in srgb, var(--el-color-primary) 20%, transparent) !important;
+:deep(th.el-table-fixed-column--right.is-first-column::before),
+:deep(td.el-table-fixed-column--right.is-first-column::before) {
+  box-shadow: none !important;
+  background-color: transparent !important;
+}
+
+:deep(.el-table__header th.el-table-fixed-column--right) {
+  background: color-mix(in oklch, var(--fg) 3%, var(--panel-bg)) !important;
+}
+
+:deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background: color-mix(in oklch, var(--fg) 4%, var(--panel-bg)) !important;
+}
+
+:deep(.el-table__body tr.el-table__row--striped > td.el-table-fixed-column--right) {
+  background: color-mix(in oklch, var(--fg) 2.5%, var(--panel-bg)) !important;
+}
+
+:deep(.el-table__body tr.el-table__row--striped:hover > td.el-table-fixed-column--right) {
+  background: color-mix(in oklch, var(--fg) 5%, var(--panel-bg)) !important;
+}
+
+:deep(.el-table__body tr.task-row-selected > td.el-table-fixed-column--right) {
+  background: color-mix(in oklch, var(--accent) 12%, var(--panel-bg)) !important;
+}
+
+:deep(.el-table__body tr.task-row-selected:hover > td.el-table-fixed-column--right) {
+  background: color-mix(in oklch, var(--accent) 16%, var(--panel-bg)) !important;
+}
+
+:deep(.task-row-selected > td.el-table__cell:not(.el-table-fixed-column--right)) {
+  background: color-mix(in oklch, var(--accent) 12%, var(--panel-bg)) !important;
+}
+
+:deep(.el-table__body tr.task-row-selected:hover > td.el-table__cell:not(.el-table-fixed-column--right)) {
+  background: color-mix(in oklch, var(--accent) 16%, var(--panel-bg)) !important;
+}
+
+:deep(.el-table .el-table__cell) {
+  padding: 4px 0;
+}
+
+:deep(.el-table .cell) {
+  line-height: 1.35;
 }
 
 .file-cell-row {
@@ -606,10 +691,10 @@ function stitchPreview(task: CompressTask): string {
 }
 
 .file-thumb {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   flex-shrink: 0;
   overflow: hidden;
   background: color-mix(in srgb, var(--app-fg-muted) 12%, transparent);
@@ -622,8 +707,8 @@ function stitchPreview(task: CompressTask): string {
 }
 
 .file-thumb.is-clickable:hover {
-  border-color: color-mix(in srgb, var(--el-color-primary) 55%, transparent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--el-color-primary) 22%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 22%, transparent);
 }
 
 .file-thumb:disabled {
@@ -684,7 +769,7 @@ function stitchPreview(task: CompressTask): string {
   height: 24px;
   margin: -12px 0 0 -12px;
   border: 2px solid color-mix(in srgb, var(--app-fg-muted) 25%, transparent);
-  border-top-color: var(--el-color-primary);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: thumb-preview-spin 0.8s linear infinite;
   pointer-events: none;

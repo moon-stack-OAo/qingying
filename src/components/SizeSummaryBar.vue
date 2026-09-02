@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { formatFileSize } from '@shared/types'
+import {formatFileSize} from '@shared/types'
 
 defineProps<{
   count: number
@@ -12,7 +12,7 @@ defineProps<{
 <template>
   <div v-if="count > 0" class="panel summary-bar">
     <span class="summary-main">
-      已完成 <b>{{ count }}</b> 个
+      完成 <b>{{ count }}</b>
       <span class="summary-sep">·</span>
       原始 <b>{{ formatFileSize(totalIn) }}</b>
       <span class="summary-arrow">→</span>
@@ -23,7 +23,7 @@ defineProps<{
       :class="ratio.startsWith('-') ? 'save-good' : 'save-bad'"
       class="summary-ratio"
     >
-      体积变化 {{ ratio }}
+      体积 {{ ratio }}
     </span>
   </div>
 </template>

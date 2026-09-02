@@ -1,8 +1,8 @@
 <script lang="ts" setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { Close, FullScreen, Minus, QuestionFilled, Setting } from '@element-plus/icons-vue'
-import type { FfmpegStatus } from '@shared/types'
-import { PRODUCT_NAME } from '@shared/brand'
+import {computed, onMounted, onUnmounted, ref} from 'vue'
+import {Close, FullScreen, Minus, Moon, QuestionFilled, Setting, Sunny} from '@element-plus/icons-vue'
+import type {FfmpegStatus, ThemeMode} from '@shared/types'
+import {PRODUCT_NAME} from '@shared/brand'
 
 const props = defineProps<{
   appVersion: string
@@ -13,6 +13,10 @@ const props = defineProps<{
   updateVersion?: string
   /** 已下载待安装 */
   updateDownloaded?: boolean
+  /** 当前主题偏好（light / dark / system） */
+  theme?: ThemeMode
+  /** 解析后的暗色态（system 时按系统偏好） */
+  isDark?: boolean
 }>()
 
 const ffmpegReady = computed(() => Boolean(props.ffmpegStatus?.ready))
@@ -37,10 +41,15 @@ const updateBadgeTip = computed(() => {
   return `发现新版本${ver}，点击查看`
 })
 
+const themeToggleTip = computed(() =>
+  props.isDark ? '切换浅色' : '切换深色'
+)
+
 const emit = defineEmits<{
   openSettings: []
   showShortcuts: []
   openUpdate: []
+  'toggle-theme': []
 }>()
 
 const maximized = ref(false)
@@ -124,6 +133,19 @@ async function close(): Promise<void> {
     <div class="title-bar-drag" aria-hidden="true" />
 
     <div class="title-bar-actions">
+      <el-tooltip :content="themeToggleTip" :show-after="400" placement="top">
+        <button
+          :aria-label="themeToggleTip"
+          class="tb-btn"
+          type="button"
+          @click="emit('toggle-theme')"
+        >
+          <el-icon :size="15">
+            <Sunny v-if="isDark" />
+            <Moon v-else />
+          </el-icon>
+        </button>
+      </el-tooltip>
       <el-tooltip content="帮助 (F1)" placement="top" :show-after="400">
         <button type="button" class="tb-btn" @click="emit('showShortcuts')">
           <el-icon :size="15"><QuestionFilled /></el-icon>
@@ -235,9 +257,9 @@ async function close(): Promise<void> {
   font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 1;
-  color: #fff;
-  background: linear-gradient(135deg, #1b4dff 0%, #0ea5e9 55%, #14b8a6 100%);
-  box-shadow: 0 0 0 1px color-mix(in srgb, #0ea5e9 35%, transparent);
+  color: var(--accent-fg, #fff);
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 35%, transparent);
   cursor: pointer;
   -webkit-app-region: no-drag;
   transition:
@@ -250,7 +272,7 @@ async function close(): Promise<void> {
 .title-bar-new:hover {
   filter: brightness(1.08);
   transform: translateY(-0.5px);
-  box-shadow: 0 0 0 1px color-mix(in srgb, #14b8a6 45%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 45%, transparent);
 }
 
 .title-bar-new:active {
@@ -259,13 +281,14 @@ async function close(): Promise<void> {
 }
 
 .title-bar-new:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--accent, var(--primary));
   outline-offset: 1px;
 }
 
 .title-bar-new.is-ready {
-  background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%);
-  box-shadow: 0 0 0 1px color-mix(in srgb, #22c55e 40%, transparent);
+  background: var(--status-ok, #16a34a);
+  color: #fff;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--status-ok, #22c55e) 40%, transparent);
   animation: none;
 }
 
@@ -273,13 +296,13 @@ async function close(): Promise<void> {
   0%,
   100% {
     box-shadow:
-      0 0 0 1px color-mix(in srgb, #0ea5e9 35%, transparent),
-      0 0 0 0 color-mix(in srgb, #0ea5e9 0%, transparent);
+      0 0 0 1px color-mix(in oklch, var(--accent) 35%, transparent),
+      0 0 0 0 color-mix(in oklch, var(--accent) 0%, transparent);
   }
   50% {
     box-shadow:
-      0 0 0 1px color-mix(in srgb, #0ea5e9 45%, transparent),
-      0 0 0 4px color-mix(in srgb, #0ea5e9 18%, transparent);
+      0 0 0 1px color-mix(in oklch, var(--accent) 45%, transparent),
+      0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent);
   }
 }
 

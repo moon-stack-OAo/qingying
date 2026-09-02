@@ -1,15 +1,15 @@
 <script lang="ts" setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import {computed, onMounted, onUnmounted, ref, watch} from 'vue'
 import {
   applyAspectRatio,
   clampCropRect,
   computeContainRect,
+  type CropRect,
   defaultCropRect,
   defaultMosaicRect,
   displayToNatural,
   naturalToDisplay,
-  roundCropRect,
-  type CropRect
+  roundCropRect
 } from '@shared/cropUiLogic'
 
 const props = withDefaults(
@@ -413,8 +413,9 @@ const imgStyle = computed(() => {
   height: 420px;
   max-height: min(420px, 55vh);
   overflow: hidden;
-  border-radius: var(--radius-xs, 4px);
-  background: color-mix(in srgb, var(--app-fg, #333) 8%, transparent);
+  border-radius: var(--radius, 8px);
+  border: 1px solid var(--panel-border);
+  background: color-mix(in oklch, var(--fg) 6%, transparent);
   user-select: none;
   touch-action: none;
 }
@@ -435,21 +436,20 @@ const imgStyle = computed(() => {
 .crop-box {
   position: absolute;
   box-sizing: border-box;
-  border: 1.5px solid var(--primary, #409eff);
+  border: 2px solid var(--accent, var(--primary));
   background: transparent;
   cursor: move;
-  /* 半透明遮罩：选区外变暗 */
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.35),
-    0 0 0 9999px rgba(0, 0, 0, 0.45);
+    inset 0 0 0 1px color-mix(in oklch, white 35%, transparent),
+    0 0 0 9999px color-mix(in oklch, var(--fg) 35%, transparent);
 }
 
 .crop-handle {
   position: absolute;
   width: 10px;
   height: 10px;
-  background: #fff;
-  border: 1.5px solid var(--primary, #409eff);
+  background: var(--surface, #fff);
+  border: 1.5px solid var(--accent, var(--primary));
   border-radius: 1px;
   box-sizing: border-box;
   z-index: 2;

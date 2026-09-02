@@ -230,36 +230,50 @@ function onPathKeydown(e: KeyboardEvent): void {
   <el-drawer
     :model-value="visible"
     class="settings-drawer"
-    size="35%"
-    title="设置"
+    size="min(420px, 100%)"
     append-to-body
     @update:model-value="(v: boolean) => emit('update:visible', v)"
   >
+    <template #header>
+      <div class="dlg-head-text">
+        <div class="dlg-title">设置</div>
+        <div class="dlg-sub">偏好在本机保存，立即生效</div>
+      </div>
+    </template>
+
     <el-tabs v-model="activeTab" class="settings-tabs">
       <el-tab-pane label="通用" name="general" lazy>
         <div class="setting-pane">
-          <div class="setting-row">
-            <span class="setting-label">主题</span>
-            <el-select
-              :model-value="theme"
-              size="small"
-              class="w-xl"
-              @change="(v: ThemeMode) => emit('themeChange', v)"
-            >
-              <el-option
+          <div class="section-label">外观</div>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>主题</strong>
+              <span>跟随系统或手动锁定</span>
+            </div>
+            <div aria-label="主题" class="theme-seg" role="group">
+              <button
                 v-for="opt in THEME_OPTIONS"
                 :key="opt.value"
-                :label="opt.label"
-                :value="opt.value"
-              />
-            </el-select>
+                :aria-pressed="theme === opt.value"
+                type="button"
+                @click="emit('themeChange', opt.value)"
+              >
+                {{ opt.label === '跟随系统' ? '系统' : opt.label }}
+              </button>
+            </div>
           </div>
-          <div class="setting-row">
-            <span class="setting-label">并发数</span>
+
+          <div class="section-label">任务</div>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>最大并发</strong>
+              <span>{{ CONCURRENCY_HINT }}</span>
+            </div>
             <el-select
               :model-value="concurrency"
               size="small"
               class="w-sm"
+              aria-label="最大并发"
               @change="(v: number) => emit('concurrencyChange', v)"
             >
               <el-option
@@ -269,28 +283,34 @@ function onPathKeydown(e: KeyboardEvent): void {
                 :value="n"
               />
             </el-select>
-            <span class="setting-hint">
-              {{ CONCURRENCY_HINT }}
-            </span>
           </div>
-          <div class="setting-row">
-            <span class="setting-label">完成后通知</span>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>完成后通知</strong>
+              <span>系统托盘气泡提示</span>
+            </div>
             <el-switch
               :model-value="notifyOnComplete"
               size="small"
               @change="(v: string | number | boolean) => emit('notifyOnCompleteChange', Boolean(v))"
             />
           </div>
-          <div class="setting-row">
-            <span class="setting-label">持久化任务</span>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>持久化任务</strong>
+              <span>重启后保留任务列表</span>
+            </div>
             <el-switch
               :model-value="persistTasks"
               size="small"
               @change="(v: string | number | boolean) => emit('persistTasksChange', Boolean(v))"
             />
           </div>
-          <div class="setting-row">
-            <span class="setting-label">关闭窗口</span>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>关闭窗口</strong>
+              <span>点击关闭按钮时的默认行为</span>
+            </div>
             <el-select
               :model-value="closeAction"
               size="small"
@@ -304,34 +324,41 @@ function onPathKeydown(e: KeyboardEvent): void {
                 :value="opt.value"
               />
             </el-select>
-            <span class="setting-hint">点击关闭按钮时的默认行为</span>
           </div>
-          <div class="setting-row">
-            <span class="setting-label">开机自启</span>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>开机自启</strong>
+              <span>登录后自动打开（安装版更可靠）</span>
+            </div>
             <el-switch
               :model-value="openAtLogin"
               size="small"
               @change="(v: string | number | boolean) => emit('openAtLoginChange', Boolean(v))"
             />
-            <span class="setting-hint">仅 Windows / macOS 安装版可靠；开发模式可能无效</span>
           </div>
-          <div class="setting-row">
-            <span class="setting-label">启动到托盘</span>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>启动到托盘</strong>
+              <span>开机后先进入托盘，不弹主窗</span>
+            </div>
             <el-switch
               :disabled="!openAtLogin"
               :model-value="startMinimizedToTray"
               size="small"
               @change="(v: string | number | boolean) => emit('startMinimizedToTrayChange', Boolean(v))"
             />
-            <span class="setting-hint">开机启动后先进入托盘，不弹出主窗口</span>
           </div>
         </div>
       </el-tab-pane>
 
       <el-tab-pane label="编码" name="ffmpeg" lazy>
         <div class="setting-pane">
-          <div class="setting-row">
-            <span class="setting-label">FFmpeg 状态</span>
+          <div class="section-label">引擎</div>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>FFmpeg 状态</strong>
+              <span>{{ ffmpegStatus?.ffmpegPath || '内置自动探测' }}</span>
+            </div>
             <el-tag
               :type="ffmpegStatus?.ready ? 'success' : 'danger'"
               effect="plain"
@@ -340,48 +367,28 @@ function onPathKeydown(e: KeyboardEvent): void {
               {{ ffmpegStatus?.ready ? '就绪' : '未就绪' }}
             </el-tag>
           </div>
-          <div v-if="ffmpegStatus && !ffmpegStatus.ready && ffmpegStatus.error" class="setting-row">
-            <span class="setting-label" />
-            <span class="setting-error">{{ ffmpegStatus.error }}</span>
+          <div
+            v-if="ffmpegStatus && !ffmpegStatus.ready && ffmpegStatus.error"
+            class="setting-error-block"
+          >
+            {{ ffmpegStatus.error }}
           </div>
-          <div class="setting-row">
-            <span class="setting-label">ffmpeg</span>
-            <el-tooltip
-              :content="ffmpegStatus?.ffmpegPath || '内置自动探测'"
-              placement="top"
-              :show-after="400"
-            >
-              <span class="tooltip-trigger setting-value">
-                {{ ffmpegStatus?.ffmpegPath || '内置自动探测' }}
-              </span>
-            </el-tooltip>
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">ffprobe</span>
-            <el-tooltip
-              :content="ffmpegStatus?.ffprobePath || '内置自动探测'"
-              placement="top"
-              :show-after="400"
-            >
-              <span class="tooltip-trigger setting-value">
-                {{ ffmpegStatus?.ffprobePath || '内置自动探测' }}
-              </span>
-            </el-tooltip>
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">自定义 bin 目录</span>
-            <el-input
-              :model-value="ffmpegBinDir"
-              class="bin-dir-input"
-              placeholder="留空=自动探测（ffmpeg-static）"
-              readonly
-              size="small"
-            />
+          <div class="setting-field">
+            <label>自定义 bin 目录</label>
+            <div class="path-row">
+              <el-input
+                :model-value="ffmpegBinDir"
+                class="bin-dir-input"
+                placeholder="留空=自动探测（ffmpeg-static）"
+                readonly
+                size="small"
+              />
+              <el-button :icon="Folder" size="small" @click="emit('browseFfmpegDir')">
+                浏览
+              </el-button>
+            </div>
           </div>
           <div class="setting-row actions">
-            <el-button :icon="Folder" size="small" @click="emit('browseFfmpegDir')">
-              浏览
-            </el-button>
             <el-button size="small" @click="emit('clearFfmpegBinDir')">
               重置自动
             </el-button>
@@ -390,14 +397,13 @@ function onPathKeydown(e: KeyboardEvent): void {
             </el-button>
           </div>
 
-          <div class="setting-divider" />
-
-          <div class="setting-row">
-            <span class="setting-label">图片引擎</span>
+          <div class="section-label">图片</div>
+          <div class="setting-field">
+            <label>图片引擎</label>
             <el-select
               :model-value="imageEngine"
               size="small"
-              class="w-xl"
+              class="control-full"
               @change="(v: ImageEngineId) => emit('imageEngineChange', v)"
             >
               <el-option
@@ -408,8 +414,11 @@ function onPathKeydown(e: KeyboardEvent): void {
               />
             </el-select>
           </div>
-          <div class="setting-row">
-            <span class="setting-label">Sharp</span>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>Sharp</strong>
+              <span>内置图片处理</span>
+            </div>
             <el-tag
               :type="imageStatus?.sharpReady ? 'success' : 'danger'"
               effect="plain"
@@ -418,8 +427,11 @@ function onPathKeydown(e: KeyboardEvent): void {
               {{ imageStatus?.sharpReady ? '就绪' : '未就绪' }}
             </el-tag>
           </div>
-          <div class="setting-row">
-            <span class="setting-label">ImageMagick</span>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>ImageMagick</strong>
+              <span>{{ imageStatus?.magickPath || 'PATH 自动探测' }}</span>
+            </div>
             <el-tag
               :type="imageStatus?.magickReady ? 'success' : 'info'"
               effect="plain"
@@ -428,42 +440,25 @@ function onPathKeydown(e: KeyboardEvent): void {
               {{ imageStatus?.magickReady ? '可用' : '未检测到' }}
             </el-tag>
           </div>
-          <div
-            v-if="imageStatus?.magickPath"
-            class="setting-row"
-          >
-            <span class="setting-label">magick</span>
-            <el-tooltip
-              :content="imageStatus.magickPath"
-              placement="top"
-              :show-after="400"
-            >
-              <span class="tooltip-trigger setting-value">
-                {{ imageStatus.magickPath }}
-              </span>
-            </el-tooltip>
+          <div v-if="imageStatus?.error" class="setting-error-block">
+            {{ imageStatus.error }}
           </div>
-          <div
-            v-if="imageStatus?.error"
-            class="setting-row"
-          >
-            <span class="setting-label" />
-            <span class="setting-error">{{ imageStatus.error }}</span>
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">Magick 路径</span>
-            <el-input
-              :model-value="imagemagickPath"
-              class="bin-dir-input"
-              placeholder="留空=自动探测 PATH 中的 magick"
-              readonly
-              size="small"
-            />
+          <div class="setting-field">
+            <label>Magick 路径</label>
+            <div class="path-row">
+              <el-input
+                :model-value="imagemagickPath"
+                class="bin-dir-input"
+                placeholder="留空=自动探测 PATH 中的 magick"
+                readonly
+                size="small"
+              />
+              <el-button :icon="Folder" size="small" @click="emit('browseMagickPath')">
+                浏览
+              </el-button>
+            </div>
           </div>
           <div class="setting-row actions">
-            <el-button :icon="Folder" size="small" @click="emit('browseMagickPath')">
-              浏览
-            </el-button>
             <el-button size="small" @click="emit('clearMagickPath')">
               清除
             </el-button>
@@ -474,23 +469,22 @@ function onPathKeydown(e: KeyboardEvent): void {
               测试引擎
             </el-button>
           </div>
-          <div class="setting-row">
-            <span class="setting-label" />
-            <span class="setting-hint">
-              可指定 magick.exe 全路径，或含 magick 的安装目录
-            </span>
-          </div>
+          <p class="setting-hint">可指定 magick.exe 全路径，或含 magick 的安装目录</p>
         </div>
       </el-tab-pane>
 
       <el-tab-pane label="远程访问" name="lan" lazy>
         <div class="setting-pane">
+          <div class="section-label">网络</div>
           <p class="setting-hint lan-intro">
-            开启后，同一局域网内可用浏览器访问本机服务，登录后上传视频/音频/图片任务并下载结果。编码器、水印、并发、图片引擎等仍使用本机设置。开启等于共享本机处理能力，请设置至少
+            开启后，同一局域网内可用浏览器访问本机服务。请设置至少
             {{ LAN_PASSWORD_MIN_LENGTH }} 位强密码，并仅在受信网络使用。
           </p>
-          <div class="setting-row">
-            <span class="setting-label">允许远程访问</span>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>允许远程访问</strong>
+              <span>共享本机处理能力</span>
+            </div>
             <el-switch
               :model-value="lanEnabled"
               :disabled="lanSaving"
@@ -498,8 +492,14 @@ function onPathKeydown(e: KeyboardEvent): void {
               @change="onLanToggle"
             />
           </div>
-          <div class="setting-row">
-            <span class="setting-label">服务状态</span>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>服务状态</strong>
+              <span v-if="lanStatus?.running">
+                {{ lanStatus.bindHost }}:{{ lanStatus.port }}
+              </span>
+              <span v-else>未对外提供服务</span>
+            </div>
             <el-tag
               :type="lanStatus?.running ? 'success' : lanStatus?.error ? 'danger' : 'info'"
               effect="plain"
@@ -514,16 +514,11 @@ function onPathKeydown(e: KeyboardEvent): void {
               }}
             </el-tag>
           </div>
-          <div v-if="lanStatus?.running" class="setting-row">
-            <span class="setting-label">监听地址</span>
-            <span class="setting-value">{{ lanStatus.bindHost }}:{{ lanStatus.port }}</span>
+          <div v-if="lanStatus?.error" class="setting-error-block">
+            {{ lanStatus.error }}
           </div>
-          <div v-if="lanStatus?.error" class="setting-row">
-            <span class="setting-label" />
-            <span class="setting-error">{{ lanStatus.error }}</span>
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">端口</span>
+          <div class="setting-field">
+            <label>服务端口</label>
             <el-input-number
               v-model="lanPort"
               :min="1024"
@@ -534,30 +529,30 @@ function onPathKeydown(e: KeyboardEvent): void {
               class="w-port"
             />
           </div>
-          <div class="setting-row">
-            <span class="setting-label">绑定网卡</span>
+          <div class="setting-field">
+            <label>绑定网卡</label>
             <el-radio-group v-model="lanBindHost" size="small">
-              <el-radio-button value="0.0.0.0">局域网 (0.0.0.0)</el-radio-button>
+              <el-radio-button value="0.0.0.0">局域网</el-radio-button>
               <el-radio-button value="127.0.0.1">仅本机</el-radio-button>
             </el-radio-group>
           </div>
-          <div class="setting-row">
-            <span class="setting-label">用户名</span>
+          <div class="setting-field">
+            <label>用户名</label>
             <el-input
               v-model="lanUsername"
               size="small"
-              class="bin-dir-input"
+              class="control-full"
               maxlength="64"
               placeholder="admin"
             />
           </div>
-          <div class="setting-row">
-            <span class="setting-label">新密码</span>
+          <div class="setting-field">
+            <label>新密码</label>
             <el-input
               v-model="lanPassword"
               type="password"
               size="small"
-              class="bin-dir-input"
+              class="control-full"
               show-password
               :placeholder="
                 lanStatus?.hasPassword
@@ -567,23 +562,23 @@ function onPathKeydown(e: KeyboardEvent): void {
               autocomplete="new-password"
             />
           </div>
-          <div class="setting-row">
-            <span class="setting-label">确认密码</span>
+          <div class="setting-field">
+            <label>确认密码</label>
             <el-input
               v-model="lanPassword2"
               type="password"
               size="small"
-              class="bin-dir-input"
+              class="control-full"
               show-password
               placeholder="再次输入新密码"
               autocomplete="new-password"
             />
           </div>
-          <div class="setting-row">
-            <span class="setting-label">密码</span>
-            <span class="setting-value">
-              {{ lanStatus?.hasPassword ? '已设置（哈希存储）' : '未设置' }}
-            </span>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>密码</strong>
+              <span>{{ lanStatus?.hasPassword ? '已设置（哈希存储）' : '未设置' }}</span>
+            </div>
           </div>
           <div class="setting-row actions">
             <el-button
@@ -598,38 +593,35 @@ function onPathKeydown(e: KeyboardEvent): void {
               刷新状态
             </el-button>
           </div>
-          <div v-if="lanStatus?.urls?.length" class="setting-divider" />
-          <div v-if="lanStatus?.urls?.length" class="setting-row">
-            <span class="setting-label">本机地址</span>
-            <div class="lan-urls">
-              <el-tooltip
-                v-for="url in lanStatus.urls"
-                :key="url"
-                :content="'点击复制 ' + url"
-                placement="top"
-                :show-after="400"
+          <div v-if="lanStatus?.urls?.length" class="section-label">本机地址</div>
+          <div v-if="lanStatus?.urls?.length" class="lan-urls">
+            <el-tooltip
+              v-for="url in lanStatus.urls"
+              :key="url"
+              :content="'点击复制 ' + url"
+              :show-after="400"
+              placement="top"
+            >
+              <button
+                class="path-copy-btn lan-url-btn"
+                type="button"
+                @click="copyLanUrl(url)"
               >
-                <button
-                  type="button"
-                  class="setting-value path-copy-btn lan-url-btn"
-                  @click="copyLanUrl(url)"
-                >
-                  {{ url }}
-                </button>
-              </el-tooltip>
-            </div>
+                {{ url }}
+              </button>
+            </el-tooltip>
           </div>
           <p class="setting-hint">
-            安全提示：绑定 0.0.0.0 时局域网设备均可尝试访问；请使用强密码，勿在公共/不可信
-            Wi‑Fi 开启。关闭远程或修改密码将立即清除浏览器会话。
+            绑定局域网时同网段设备均可尝试访问；勿在公共 Wi‑Fi 开启。关闭远程或改密将清除会话。
           </p>
         </div>
       </el-tab-pane>
 
       <el-tab-pane label="数据" name="data" lazy>
         <div class="setting-pane">
-          <div class="setting-row">
-            <span class="setting-label">数据目录</span>
+          <div class="section-label">存储</div>
+          <div class="setting-field">
+            <label>数据目录</label>
             <el-tooltip
               :content="appInfo?.userDataPath ? `点击复制\n${appInfo.userDataPath}` : ''"
               placement="top"
@@ -637,17 +629,15 @@ function onPathKeydown(e: KeyboardEvent): void {
               :disabled="!appInfo?.userDataPath"
               popper-class="tooltip-pre-line"
             >
-              <span class="tooltip-trigger setting-value">
-                <button
-                  type="button"
-                  class="path-copy-btn setting-value"
-                  :disabled="!appInfo?.userDataPath"
-                  @click="copyUserDataPath"
-                  @keydown="onPathKeydown"
-                >
-                  {{ appInfo?.userDataPath || '—' }}
-                </button>
-              </span>
+              <button
+                :disabled="!appInfo?.userDataPath"
+                class="path-copy-btn path-block"
+                type="button"
+                @click="copyUserDataPath"
+                @keydown="onPathKeydown"
+              >
+                {{ appInfo?.userDataPath || '—' }}
+              </button>
             </el-tooltip>
           </div>
           <div class="setting-row actions">
@@ -655,9 +645,9 @@ function onPathKeydown(e: KeyboardEvent): void {
             <el-button size="small" @click="emit('changeDataDir')">修改数据目录…</el-button>
           </div>
           <p class="setting-hint">
-            修改时会将设置、任务列表等迁移到新目录（不覆盖已有文件；缓存目录不迁移；原目录保留）。
+            修改时会迁移设置与任务列表（不覆盖已有文件；缓存不迁移；原目录保留）。
           </p>
-          <div class="setting-divider" />
+          <div class="section-label">危险操作</div>
           <div class="setting-row actions">
             <el-button size="small" plain type="danger" @click="confirmClearTasks">
               清空已持久化任务
@@ -671,53 +661,86 @@ function onPathKeydown(e: KeyboardEvent): void {
 
       <el-tab-pane label="关于" name="about" lazy>
         <div class="setting-pane">
-          <div class="setting-row">
-            <span class="setting-label">应用</span>
-            <span class="setting-value">{{ PRODUCT_NAME }} · {{ PRODUCT_TAGLINE }}</span>
+          <div class="section-label">应用</div>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>{{ PRODUCT_NAME }}</strong>
+              <span>{{ PRODUCT_TAGLINE }}</span>
+            </div>
           </div>
-          <div class="setting-row">
-            <span class="setting-label">版本</span>
-            <span class="setting-value">v{{ appVersion }}</span>
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">打包状态</span>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>版本</strong>
+              <span class="num">v{{ appVersion }}</span>
+            </div>
             <el-tag :type="isPackaged ? 'success' : 'info'" effect="plain" size="small">
               {{ isPackaged ? '已打包' : '开发态' }}
             </el-tag>
           </div>
-          <div class="setting-row">
-            <span class="setting-label">Electron</span>
-            <span class="setting-value">{{ appInfo?.electron ?? '—' }}</span>
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">Chrome</span>
-            <span class="setting-value">{{ appInfo?.chrome ?? '—' }}</span>
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">Node</span>
-            <span class="setting-value">{{ appInfo?.node ?? '—' }}</span>
+          <div class="setting-row setting-row-meta">
+            <div class="setting-meta">
+              <strong>运行时</strong>
+              <span class="num">
+                Electron {{ appInfo?.electron ?? '—' }} · Chrome {{ appInfo?.chrome ?? '—' }} · Node
+                {{ appInfo?.node ?? '—' }}
+              </span>
+            </div>
           </div>
           <div class="setting-row actions">
-            <el-button :loading="updateChecking" size="small" type="primary" @click="emit('checkUpdate')">
+            <el-button
+              :loading="updateChecking"
+              size="small"
+              type="primary"
+              @click="emit('checkUpdate')"
+            >
               检查更新
             </el-button>
           </div>
         </div>
       </el-tab-pane>
     </el-tabs>
+
+    <div class="settings-foot">
+      <span class="settings-foot-hint">修改会自动保存</span>
+      <el-button size="small" @click="confirmReset">恢复默认</el-button>
+      <el-button size="small" type="primary" @click="emit('update:visible', false)">
+        完成
+      </el-button>
+    </div>
   </el-drawer>
 </template>
 
 <style scoped>
+.dlg-head-text {
+  min-width: 0;
+  padding-right: 8px;
+}
+
+.dlg-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--app-fg);
+  line-height: 1.3;
+}
+
+.dlg-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--app-fg-muted);
+  line-height: 1.4;
+}
+
 .settings-tabs {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
 }
 
 .settings-tabs :deep(.el-tabs__header) {
-  margin: 0 0 var(--space-3);
+  margin: 0 0 12px;
   flex-shrink: 0;
 }
 
@@ -731,20 +754,20 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .settings-tabs :deep(.el-tabs__item) {
-  font-size: var(--fs-md);
-  height: 36px;
-  line-height: 36px;
-  padding: 0 14px;
+  font-size: 13px;
+  height: 32px;
+  line-height: 32px;
+  padding: 0 12px;
   color: var(--app-fg-secondary);
 }
 
 .settings-tabs :deep(.el-tabs__item.is-active) {
-  color: var(--primary);
+  color: var(--accent);
   font-weight: 600;
 }
 
 .settings-tabs :deep(.el-tabs__active-bar) {
-  background-color: var(--primary);
+  background-color: var(--accent);
 }
 
 .settings-tabs :deep(.el-tabs__content) {
@@ -754,20 +777,28 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .settings-tabs :deep(.el-tab-pane) {
-  height: 100%;
+  height: auto;
 }
 
 .setting-pane {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding-bottom: var(--space-2);
+  gap: 0;
+  padding-bottom: 8px;
 }
 
-.setting-divider {
-  height: 0;
-  margin: var(--space-2) 0;
-  box-shadow: inset 0 -1px 0 0 var(--panel-border);
+.section-label {
+  margin: 16px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.section-label:first-child {
+  margin-top: 0;
 }
 
 .setting-row {
@@ -778,21 +809,98 @@ function onPathKeydown(e: KeyboardEvent): void {
   min-height: 28px;
 }
 
-.setting-label {
-  flex-shrink: 0;
-  width: 108px;
-  font-size: var(--fs-md);
-  color: var(--app-fg-secondary);
+.setting-row-meta {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: nowrap;
+  gap: 12px;
 }
 
-.setting-value {
+.setting-row-meta:last-child {
+  border-bottom: 0;
+}
+
+.setting-meta {
   flex: 1;
   min-width: 0;
-  font-size: var(--fs-md);
+}
+
+.setting-meta strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.setting-meta span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--app-fg);
+}
+
+.theme-seg {
+  display: flex;
+  flex: none;
+  width: 180px;
+  padding: 2px;
+  gap: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.theme-seg button {
+  flex: 1;
+  height: 26px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.theme-seg button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.theme-seg button:hover {
+  color: var(--fg);
+}
+
+.theme-seg button:focus-visible {
+  outline: 2px solid var(--accent-soft);
+}
+
+.setting-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.setting-field label {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.path-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.control-full,
+.bin-dir-input {
+  width: 100%;
+  min-width: 0;
 }
 
 .path-copy-btn {
@@ -808,11 +916,11 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .path-copy-btn:hover:not(:disabled) {
-  color: var(--primary);
+  color: var(--accent);
 }
 
 .path-copy-btn:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--accent-soft);
   outline-offset: 1px;
 }
 
@@ -821,45 +929,47 @@ function onPathKeydown(e: KeyboardEvent): void {
   opacity: 0.7;
 }
 
+.path-block {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .setting-hint {
-  flex: 1 1 12rem;
-  min-width: 0;
-  font-size: var(--fs-xs);
-  color: var(--app-fg-muted);
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
   line-height: 1.5;
-  white-space: normal;
-  overflow: visible;
   word-break: break-word;
 }
 
-.setting-error {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--fs-sm);
-  color: var(--status-bad);
+.setting-error-block {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in oklch, var(--danger) 35%, var(--border));
+  background: var(--danger-soft);
+  font-size: 12px;
+  color: var(--danger);
   line-height: 1.5;
-  white-space: normal;
   word-break: break-word;
-}
-
-.bin-dir-input {
-  flex: 1;
-  min-width: 0;
 }
 
 .setting-row.actions {
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: 8px;
+  padding: 4px 0 8px;
 }
 
 .lan-intro {
-  flex: none;
-  margin: 0 0 var(--space-1);
-}
-
-p.setting-hint {
-  flex: none;
-  margin: 0;
+  margin: 0 0 8px;
 }
 
 .w-port {
@@ -867,29 +977,44 @@ p.setting-hint {
 }
 
 .lan-urls {
-  flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  margin-bottom: 8px;
 }
 
 .lan-url-btn {
   width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.tooltip-trigger {
-  display: inline-flex;
-  min-width: 0;
-  max-width: 100%;
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
-.tooltip-trigger.setting-value {
-  flex: 1;
+.settings-foot {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--border);
 }
 
-.tooltip-trigger .path-copy-btn {
-  width: 100%;
-  min-width: 0;
+.settings-foot-hint {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--muted);
 }
 </style>

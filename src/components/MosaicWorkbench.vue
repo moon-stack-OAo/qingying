@@ -1,7 +1,7 @@
 <script lang="ts" setup>
-import { computed } from 'vue'
-import { type CompressTask, formatFileSize } from '@shared/types'
-import { formatEta, statusLabel, statusType } from '../utils/taskUi'
+import {computed} from 'vue'
+import {type CompressTask, formatFileSize} from '@shared/types'
+import {formatEta, statusLabel, statusType} from '../utils/taskUi'
 import DropZone from './DropZone.vue'
 
 const props = defineProps<{
@@ -41,7 +41,7 @@ const isCompleted = computed(
 
 const regionHint = computed(() =>
   props.mosaicRegionCount > 0
-    ? `已设置 ${props.mosaicRegionCount} 个打码区域`
+    ? `打码区域 · ${props.mosaicRegionCount}`
     : '尚未设置打码区域'
 )
 
@@ -50,21 +50,21 @@ const nextStepHint = computed(() => {
   const t = props.task
   if (!t) return ''
   if (t.status === 'queued') {
-    return '已进入队列，若长时间不动请取消后重试（或完全重启应用）'
+    return '已入队 · 若长时间不动可取消后重试'
   }
   if (t.status === 'running') {
-    return '正在导出，可随时取消'
+    return '正在打码 · 可随时取消'
   }
   if (t.status === 'completed') {
-    return '导出完成，可打开文件或清除后换视频'
+    return '完成 · 可打开文件或清除后换视频'
   }
   if (t.status === 'failed') {
-    return '导出失败，可调整打码区域后重试'
+    return '失败 · 可调整区域后重试'
   }
   if (props.mosaicRegionCount <= 0) {
-    return '下一步：点击「编辑打码区域」框选需要打码的位置'
+    return '下一步：编辑区域，框选需要打码的位置'
   }
-  return '下一步：确认区域后点击「开始导出」'
+  return '下一步：确认区域后开始打码'
 })
 </script>
 
@@ -144,26 +144,25 @@ const nextStepHint = computed(() => {
         <div class="mosaic-card-actions">
           <el-button
             size="small"
-            type="primary"
             plain
             :disabled="!mosaicEditable"
             @click="emit('editMosaics')"
           >
-            编辑打码区域
+            编辑区域
           </el-button>
 
           <el-button
             v-if="canStart"
             size="small"
-            type="success"
+            type="primary"
             @click="emit('start', task)"
           >
-            开始导出
+            开始打码
           </el-button>
           <el-button
             v-else-if="isActive"
             size="small"
-            type="warning"
+            plain
             @click="emit('cancel', task.id)"
           >
             取消
@@ -172,7 +171,7 @@ const nextStepHint = computed(() => {
             <el-button size="small" type="primary" @click="emit('open', task)">
               打开文件
             </el-button>
-            <el-button size="small" @click="emit('showInFolder', task)">
+            <el-button plain size="small" @click="emit('showInFolder', task)">
               在文件夹中显示
             </el-button>
           </template>
@@ -281,7 +280,7 @@ const nextStepHint = computed(() => {
 
 .mosaic-error {
   font-size: var(--fs-sm);
-  color: var(--el-color-danger);
+  color: var(--danger, var(--status-bad));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

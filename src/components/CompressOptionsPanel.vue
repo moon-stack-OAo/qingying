@@ -1,7 +1,7 @@
 <script lang="ts" setup>
-import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Folder } from '@element-plus/icons-vue'
+import {computed, ref, watch} from 'vue'
+import {ElMessage} from 'element-plus'
+import {Folder} from '@element-plus/icons-vue'
 import {
   ASPECT_RATIO_OPTIONS,
   type AspectRatioId,
@@ -29,25 +29,21 @@ import {
   type OutputDirMode,
   type OutputFormat,
   type PresetId,
-  ROTATE90_OPTIONS,
   type Rotate90,
+  ROTATE90_OPTIONS,
   SCALE_MODE_OPTIONS,
   SCALE_PAD_OPTIONS,
   type ScaleMode,
   type ScalePadMode,
   TASK_MODE_OPTIONS,
   type TaskMode,
-  TOOL_GROUP_MODES,
-  TOOL_GROUP_OPTIONS,
-  type ToolGroup,
-  toolGroupOfMode,
   VIDEO_EXTENSIONS,
   WATERMARK_MODE_OPTIONS,
   WATERMARK_POSITION_OPTIONS,
   type WatermarkMode,
   type WatermarkPosition
 } from '@shared/types'
-import type { CropRect } from '@shared/cropUiLogic'
+import type {CropRect} from '@shared/cropUiLogic'
 import ImageCropDialog from './ImageCropDialog.vue'
 
 const props = withDefaults(
@@ -131,6 +127,10 @@ const props = withDefaults(
     /** 多任务全局草稿下裁切/混剪危险提示 */
     showCropComposeWarning?: boolean
     cropComposeWarningText?: string
+    /** 是否有待处理任务（主 CTA 禁用） */
+    hasPending?: boolean
+    /** 是否有进行中任务（可选） */
+    hasActive?: boolean
     /** 分辨率缩放模式（custom） */
     scaleMode: ScaleMode
     outWidth: number
@@ -147,12 +147,14 @@ const props = withDefaults(
     cropPreviewPath: '',
     mosaicFrameByFrame: false,
     showCropComposeWarning: false,
-    cropComposeWarningText: ''
+    cropComposeWarningText: '',
+    hasPending: false,
+    hasActive: false
   }
 )
 
 const emit = defineEmits<{
-  taskModeChange: [mode: TaskMode]
+  startAll: []
   audioFormatChange: [v: AudioFormat]
   audioBitrateChange: [v: string]
   presetChange: [id: PresetId]
@@ -218,10 +220,18 @@ const emit = defineEmits<{
   applyToPending: []
 }>()
 
-/** 高级选项默认折叠 */
+/** 高级参数抽屉 */
 const advancedOpen = ref(false)
-/** 视频画面裁切折叠 */
+/** 视频画面裁切折叠（抽屉内） */
 const videoCropOpen = ref(false)
+
+watch(
+  () => props.taskMode,
+  () => {
+    advancedOpen.value = false
+    videoCropOpen.value = false
+  }
+)
 
 /** 质量滑块本地值：拖动即时跟手，松手再 emit 持久化 */
 const imageQualityDraft = ref(props.imageQuality)
@@ -231,6 +241,33 @@ watch(
     imageQualityDraft.value = v
   }
 )
+
+const isImageCompressMode = computed(() => props.taskMode === 'image')
+const isImageCropMode = computed(() => props.taskMode === 'image-crop')
+const isImageStitchMode = computed(() => props.taskMode === 'image-stitch')
+
+/** 是否展示高级折叠区（打码参数区简化，无高级折叠） */
+const showAdvancedSection = computed(() => !props.isVideoMosaicMode)
+
+const advancedSummary = computed(() => {
+  if (props.isAudioMode) return '命名 · 并发 · 其它'
+  if (isImageCompressMode.value) return '输出目录 · 命名 · 并发'
+  if (isImageCropMode.value) return '输出格式 · 目录 · 命名'
+  if (isImageStitchMode.value) return '输出格式 · 最长边 · 目录 · 命名'
+  if (props.isVideoConcatMode) return '回退编码器 · 命名 · 并发'
+  if (props.isMediaComposeMode) return '叠加层 · 位置 · 透明度 · 编码器'
+  if (props.isVideoCompressMode) return 'CRF · 水印 · 时段 · 画面'
+  return '高级参数'
+})
+
+const nameTemplatePlaceholder = computed(() => {
+  if (props.isAudioMode) return '{name}_audio'
+  if (props.isImageMode) return '{name}_img'
+  if (props.isVideoConcatMode) return '{name}_concat'
+  if (props.isMediaComposeMode) return '{name}_compose'
+  if (props.isVideoMosaicMode) return '{name}_mosaic'
+  return '{name}_{preset}'
+})
 
 function onImageQualityCommit(v: number | number[]): void {
   const n = Array.isArray(v) ? v[0] : v
@@ -242,29 +279,12 @@ function onImageQualityCommit(v: number | number[]): void {
   emit('imageQualityChange', next)
 }
 
-/** 工具分组（视频 / 图片 / 合成） */
-const toolGroup = ref<ToolGroup>(toolGroupOfMode(props.taskMode))
-
-watch(
-  () => props.taskMode,
-  (mode) => {
-    toolGroup.value = toolGroupOfMode(mode)
-  }
-)
-
-const secondaryModeOptions = computed(() => {
-  const modes = TOOL_GROUP_MODES[toolGroup.value] || []
-  return TASK_MODE_OPTIONS.filter((o) => modes.includes(o.value))
+const modeTitle = computed(() => {
+  const hit = TASK_MODE_OPTIONS.find((o) => o.value === props.taskMode)
+  return hit?.label || '任务选项'
 })
 
-function onToolGroupChange(v: string | number | boolean | undefined): void {
-  const g = (v as ToolGroup) || 'video'
-  toolGroup.value = g
-  const modes = TOOL_GROUP_MODES[g] || []
-  if (!modes.length) return
-  if (modes.includes(props.taskMode)) return
-  emit('taskModeChange', modes[0])
-}
+const startAllDisabled = computed(() => !props.hasPending)
 
 /** 编码器探测简短 chips */
 const encoderChips = computed(() => {
@@ -289,10 +309,18 @@ const hasComposeAssets = computed(() => {
   return !!(intro || outro || overlay)
 })
 
+const composeAssetsSummary = computed(() => {
+  const parts: string[] = []
+  if ((props.composeIntroPath || '').trim()) parts.push('片头')
+  if ((props.composeOutroPath || '').trim()) parts.push('片尾')
+  if ((props.composeOverlayPath || '').trim()) parts.push('叠加层')
+  return parts.length ? `已配置：${parts.join(' · ')}` : ''
+})
+
 const cropDialogOpen = ref(false)
 const cropDialogPath = ref('')
 const cropDialogHint = ref('')
-const cropDialogTitle = ref('可视化裁切')
+const cropDialogTitle = ref('图片裁切')
 /** 视频抽帧预加载（与 path 二选一） */
 const cropDialogInitialDataUrl = ref('')
 const cropDialogNaturalW = ref(0)
@@ -340,7 +368,7 @@ function resetCropDialogPreload(): void {
 async function openVisualCrop(): Promise<void> {
   let path = (props.cropPreviewPath || '').trim()
   let hint = ''
-  let title = '可视化裁切'
+  let title = '图片裁切'
   resetCropDialogPreload()
 
   if (path && isVideoPath(path)) {
@@ -363,8 +391,8 @@ async function openVisualCrop(): Promise<void> {
         cropDialogVideoPath.value = path
         cropDialogTimeSec.value = 0
         cropDialogHint.value =
-          '已从视频抽帧预览。裁切坐标基于源视频显示分辨率（像素）。可调整时间点重新抽帧。'
-        cropDialogTitle.value = '可视化裁切（视频帧）'
+          '视频帧预览 · 坐标基于源分辨率；可改时间点重新抽帧'
+        cropDialogTitle.value = '图片裁切'
         cropDialogOpen.value = true
         return
       }
@@ -376,9 +404,8 @@ async function openVisualCrop(): Promise<void> {
     const picked = await window.electronAPI.selectImage()
     if (!picked?.path) return
     path = picked.path
-    hint =
-      '当前为参考图定框：请确保参考图与视频分辨率一致。裁切坐标将按像素写入视频 crop 滤镜。'
-    title = '可视化裁切（参考图）'
+    hint = '参考图定框 · 请与视频分辨率一致'
+    title = '图片裁切'
   } else if (!path || !isImagePath(path)) {
     const picked = await window.electronAPI.selectImage()
     if (!picked?.path) {
@@ -387,9 +414,8 @@ async function openVisualCrop(): Promise<void> {
     }
     path = picked.path
     if (props.taskMode === 'compress') {
-      hint =
-        '视频模式下使用图片定框；请确保参考图与视频分辨率一致。'
-      title = '可视化裁切（参考图）'
+      hint = '参考图定框 · 请与视频分辨率一致'
+      title = '图片裁切'
     }
   }
 
@@ -407,15 +433,15 @@ function onCropDialogConfirm(rect: CropRect): void {
 }
 
 function modeDesc(): string {
-  if (props.isAudioMode) return '仅抽取音频'
-  if (props.taskMode === 'image') return '图片压缩 / 格式转换'
-  if (props.taskMode === 'image-crop') return '按像素裁切图片'
-  if (props.taskMode === 'image-stitch') return '多图拼接为一张'
-  if (props.taskMode === 'video-concat') return '多段视频首尾拼接'
-  if (props.taskMode === 'media-compose') return '片头/片尾静图 + 图叠主视频'
+  if (props.isAudioMode) return '格式与码率外露；命名等进高级'
+  if (props.taskMode === 'image') return '格式 / 质量 / 最长边外露；目录与命名折叠'
+  if (props.taskMode === 'image-crop') return '像素框外露；精细拖拽用裁切画布'
+  if (props.taskMode === 'image-stitch') return '布局参数外露；顺序在任务表调整'
+  if (props.taskMode === 'video-concat') return 'Copy 优先与输出目录外露；顺序在任务表调整'
+  if (props.taskMode === 'media-compose') return '片头 / 片尾外露；叠加层与编码器折叠'
   if (props.taskMode === 'video-mosaic')
-    return '仅支持单个视频，框选区域后接近原画导出'
-  return props.presetDescription
+    return '单任务工作台：选文件后在下方打码台框选区域'
+  return props.presetDescription || '常用参数置顶；高级编码器与水印折叠'
 }
 
 /** 下拉展示值：自定义时用哨兵 */
@@ -491,18 +517,30 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
   <div class="panel options-panel">
     <div class="options-header">
       <div class="options-header-left">
-        <span class="options-title">{{ isVideoMosaicMode ? '打码选项' : '任务选项' }}</span>
-        <span class="options-desc">
-          {{ modeDesc() }}
-        </span>
+        <div class="options-title-block">
+          <span class="options-title">{{ modeTitle }}</span>
+          <span class="options-desc">{{ modeDesc() }}</span>
+        </div>
       </div>
-      <el-button
-        v-if="!isVideoMosaicMode"
-        size="small"
-        @click="emit('applyToPending')"
-      >
-        应用到待处理
-      </el-button>
+      <div class="options-header-actions">
+        <el-button
+          v-if="!isVideoMosaicMode"
+          plain
+          size="small"
+          @click="emit('applyToPending')"
+        >
+          应用到待处理
+        </el-button>
+        <el-button
+          v-if="!isVideoMosaicMode"
+          :disabled="startAllDisabled"
+          size="small"
+          type="primary"
+          @click="emit('startAll')"
+        >
+          全部开始
+        </el-button>
+      </div>
     </div>
 
     <el-alert
@@ -514,650 +552,1255 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
       :title="cropComposeWarningText || '当前裁切/混剪参数将应用于全部待处理任务'"
     />
 
-    <!-- 第一行：工具分组 / 任务模式 / 预设（或音频 / 图片参数） -->
-    <div class="opt-row opt-row-wrap">
-      <div class="opt-item">
-        <span class="label">工具</span>
-        <el-radio-group
-          :model-value="toolGroup"
-          size="small"
-          @change="onToolGroupChange"
-        >
-          <el-radio-button
-            v-for="opt in TOOL_GROUP_OPTIONS"
-            :key="opt.value"
-            :value="opt.value"
-          >
-            {{ opt.label }}
-          </el-radio-button>
-        </el-radio-group>
-      </div>
-
-      <div v-if="secondaryModeOptions.length > 1" class="opt-item">
-        <span class="label">模式</span>
-        <el-radio-group
-          :model-value="taskMode"
-          size="small"
-          @change="(v: string | number | boolean | undefined) => emit('taskModeChange', v as TaskMode)"
-        >
-          <el-radio-button
-            v-for="opt in secondaryModeOptions"
-            :key="opt.value"
-            :value="opt.value"
-          >
-            {{ opt.label }}
-          </el-radio-button>
-        </el-radio-group>
-      </div>
-
-      <div class="opt-divider" aria-hidden="true" />
-
-      <template v-if="isAudioMode">
-        <div class="opt-item">
-          <span class="label">音频格式</span>
-          <el-select
-            :model-value="audioFormat"
-            size="small"
-            class="w-3xl"
-            @change="(v: AudioFormat) => emit('audioFormatChange', v)"
-          >
-            <el-option
-              v-for="opt in AUDIO_FORMAT_OPTIONS"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </div>
-        <div class="opt-item">
-          <span class="label">码率</span>
-          <el-select
-            :model-value="audioBitrate"
-            size="small"
-            class="w-md"
-            @change="(v: string) => emit('audioBitrateChange', v)"
-          >
-            <el-option
-              v-for="br in AUDIO_BITRATE_OPTIONS"
-              :key="br"
-              :label="br"
-              :value="br"
-            />
-          </el-select>
-        </div>
-      </template>
-
-      <template v-else-if="isImageMode">
-        <div class="opt-item">
-          <span class="label">格式</span>
-          <el-select
-            :model-value="imageFormat"
-            size="small"
-            class="w-3xl"
-            @change="(v: 'jpeg' | 'png' | 'webp' | 'keep') => emit('imageFormatChange', v)"
-          >
-            <el-option
-              v-for="opt in IMAGE_FORMAT_OPTIONS"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </div>
-        <div class="opt-item">
-          <el-tooltip content="JPEG / WebP 有效" placement="top" :show-after="400">
-            <span class="label">质量</span>
-          </el-tooltip>
-          <el-slider
-            v-model="imageQualityDraft"
-            :min="1"
-            :max="100"
-            :step="1"
-            size="small"
-            class="w-quality"
-            @change="onImageQualityCommit"
-          />
-          <span class="hint-inline hint-inline--tight">{{ imageQualityDraft }}</span>
-        </div>
-        <el-tooltip content="0 = 不限制" placement="top" :show-after="400">
-          <div class="opt-item">
-            <span class="label">最长边</span>
-            <el-input-number
-              :model-value="imageMaxEdge"
-              :min="0"
-              :max="7680"
-              :step="10"
+    <!-- 常用参数（按模式外露 3–5 项） -->
+    <div class="opt-common">
+      <!-- compress -->
+      <template v-if="isVideoCompressMode">
+        <div class="opt-row opt-row-wrap">
+          <div class="opt-item opt-item-fill">
+            <span class="label">预设</span>
+            <el-radio-group
+              :model-value="presetId"
               size="small"
-              controls-position="right"
-              class="w-lg"
-              @change="(v: number | undefined) => emit('imageMaxEdgeChange', typeof v === 'number' ? v : 0)"
-            />
-          </div>
-        </el-tooltip>
-        <el-tooltip content="去掉 EXIF 等元数据" placement="top" :show-after="400">
-          <div class="opt-item">
-            <span class="label">去元数据</span>
-            <el-switch
-              :model-value="imageStrip"
-              size="small"
-              @change="(v: string | number | boolean) => emit('imageStripChange', Boolean(v))"
-            />
-          </div>
-        </el-tooltip>
-      </template>
-
-      <template v-else-if="isVideoConcatMode">
-        <span class="hint-inline">
-          片段顺序：在任务列表点「编辑拼接顺序」，弹窗内可拖拽调整
-        </span>
-        <el-tooltip content="编码参数一致时可流复制，更快" placement="top" :show-after="400">
-          <div class="opt-item">
-            <span class="label">优先流复制</span>
-            <el-switch
-              :model-value="concatPreferCopy"
-              size="small"
-              @change="(v: string | number | boolean) => emit('concatPreferCopyChange', Boolean(v))"
-            />
-            <span class="hint-inline hint-inline--tight">更快，要求编码一致</span>
-          </div>
-        </el-tooltip>
-        <el-tooltip :content="encoderTitle(false, encoderInfo)" placement="top" :show-after="400">
-          <div class="opt-item">
-            <span class="label">编码器</span>
-            <el-select
-              :model-value="encoder"
-              size="small"
-              class="w-4xl"
-              @change="(v: EncoderId) => emit('encoderChange', v)"
+              @change="(v: string | number | boolean | undefined) => emit('presetChange', v as PresetId)"
             >
-              <el-option
-                v-for="opt in ENCODER_OPTIONS"
-                :key="opt.value"
-                :label="encoderOptionLabel(opt)"
-                :value="opt.value"
-                :disabled="!isEncoderOptionAvailable(opt.value)"
-              />
-            </el-select>
-            <span v-if="encoderChips.length" class="encoder-chips">
-              <span
-                v-for="c in encoderChips"
-                :key="c.key"
-                class="encoder-chip"
-                :class="{ ok: c.ok, bad: !c.ok }"
-              >
-                {{ c.label }}{{ c.ok ? '✓' : '–' }}
-              </span>
-            </span>
+              <el-radio-button v-for="p in DEFAULT_PRESETS" :key="p.id" :value="p.id">
+                {{ p.name }}
+              </el-radio-button>
+            </el-radio-group>
           </div>
-        </el-tooltip>
-        <span class="hint-inline">流复制失败时将按此编码器重编码</span>
-      </template>
-
-      <template v-else-if="isMediaComposeMode">
-        <el-tooltip content="片头尾静图缩放到主视频尺寸并黑边填充" placement="top" :show-after="400">
           <div class="opt-item">
-            <span class="label">匹配主视频尺寸</span>
-            <el-switch
-              :model-value="composeFitIntroOutro"
-              size="small"
-              @change="(v: string | number | boolean) => emit('composeFitIntroOutroChange', Boolean(v))"
-            />
-            <span class="hint-inline">主视频从任务列表添加；图片在此选择</span>
-          </div>
-        </el-tooltip>
-        <el-tooltip :content="encoderTitle(false, encoderInfo)" placement="top" :show-after="400">
-          <div class="opt-item">
-            <span class="label">编码器</span>
-            <el-select
-              :model-value="encoder"
-              size="small"
-              class="w-4xl"
-              @change="(v: EncoderId) => emit('encoderChange', v)"
-            >
-              <el-option
-                v-for="opt in ENCODER_OPTIONS"
-                :key="opt.value"
-                :label="encoderOptionLabel(opt)"
-                :value="opt.value"
-                :disabled="!isEncoderOptionAvailable(opt.value)"
-              />
-            </el-select>
-            <span v-if="encoderChips.length" class="encoder-chips">
-              <span
-                v-for="c in encoderChips"
-                :key="c.key"
-                class="encoder-chip"
-                :class="{ ok: c.ok, bad: !c.ok }"
-              >
-                {{ c.label }}{{ c.ok ? '✓' : '–' }}
-              </span>
-            </span>
-          </div>
-        </el-tooltip>
-        <span class="hint-inline hint-inline--tight">重编码时使用</span>
-      </template>
-
-      <template v-else-if="isVideoMosaicMode">
-        <!-- 编辑打码区域入口保留在 MosaicWorkbench；编码器固定软件，避免硬件探测卡住 -->
-        <el-tooltip
-          content="关闭：FFmpeg 滤镜一次编码（推荐）。开启：抽出全部帧为 JPEG，用 Sharp 打码后再封装——更慢、临时盘占用大，适合对照或特殊需求。"
-          placement="top"
-          :show-after="400"
-        >
-          <div class="opt-item">
-            <span class="label">逐帧流水线</span>
-            <el-switch
-              :model-value="mosaicFrameByFrame"
-              size="small"
-              @change="(v: string | number | boolean) => emit('mosaicFrameByFrameChange', Boolean(v))"
-            />
-            <span class="hint-inline hint-inline--tight">
-              {{ mosaicFrameByFrame ? '抽帧→打码→封装' : '滤镜一次编码' }}
-            </span>
-          </div>
-        </el-tooltip>
-        <span class="hint-inline">
-          接近原画导出（CRF 18 · 原分辨率 · MP4 · 软件编码）
-        </span>
-      </template>
-
-      <template v-else>
-        <div class="opt-item opt-item-fill">
-          <span class="label">预设</span>
-          <el-radio-group
-            :model-value="presetId"
-            size="small"
-            @change="(v: string | number | boolean | undefined) => emit('presetChange', v as PresetId)"
-          >
-            <el-radio-button v-for="p in DEFAULT_PRESETS" :key="p.id" :value="p.id">
-              {{ p.name }}
-            </el-radio-button>
-          </el-radio-group>
-        </div>
-      </template>
-    </div>
-
-    <!-- 图片裁切 / 拼接额外选项 -->
-    <div v-if="taskMode === 'image-crop'" class="opt-row opt-row-wrap">
-      <el-tooltip content="原图像素坐标" placement="top" :show-after="400">
-        <div class="opt-item">
-          <span class="label">裁切区域</span>
-          <span class="hint-inline hint-inline--tight">X</span>
-          <el-input-number
-            :model-value="cropX"
-            :min="0"
-            :max="20000"
-            :step="1"
-            size="small"
-            controls-position="right"
-            class="w-lg"
-            @change="(v: number | undefined) => emit('cropXChange', typeof v === 'number' ? v : 0)"
-          />
-          <span class="hint-inline hint-inline--tight">Y</span>
-          <el-input-number
-            :model-value="cropY"
-            :min="0"
-            :max="20000"
-            :step="1"
-            size="small"
-            controls-position="right"
-            class="w-lg"
-            @change="(v: number | undefined) => emit('cropYChange', typeof v === 'number' ? v : 0)"
-          />
-          <span class="hint-inline hint-inline--tight">宽</span>
-          <el-input-number
-            :model-value="cropW"
-            :min="0"
-            :max="20000"
-            :step="1"
-            size="small"
-            controls-position="right"
-            class="w-lg"
-            @change="(v: number | undefined) => emit('cropWChange', typeof v === 'number' ? v : 0)"
-          />
-          <span class="hint-inline hint-inline--tight">高</span>
-          <el-input-number
-            :model-value="cropH"
-            :min="0"
-            :max="20000"
-            :step="1"
-            size="small"
-            controls-position="right"
-            class="w-lg"
-            @change="(v: number | undefined) => emit('cropHChange', typeof v === 'number' ? v : 0)"
-          />
-          <el-button size="small" type="primary" plain @click="openVisualCrop">
-            可视化裁切
-          </el-button>
-          <span class="hint-inline">原图像素，宽高须 &gt; 0</span>
-        </div>
-      </el-tooltip>
-    </div>
-
-    <!-- 图+视频混剪选项 -->
-    <template v-if="isMediaComposeMode">
-      <el-alert
-        v-if="!hasComposeAssets"
-        class="compose-empty-alert"
-        type="info"
-        :closable="false"
-        show-icon
-        title="请先选择片头、片尾或叠加图，再添加主视频并启动任务"
-      />
-      <div class="opt-row opt-row-wrap">
-        <div class="opt-item opt-item-fill">
-          <span class="label">片头图</span>
-          <el-input
-            :model-value="composeIntroPath"
-            size="small"
-            placeholder="可选：片头静图路径"
-            class="w-5xl"
-            @update:model-value="(v: string) => emit('composeIntroPathChange', v)"
-          />
-          <el-button size="small" @click="emit('selectComposeIntroImage')">浏览</el-button>
-        </div>
-        <div class="opt-item">
-          <span class="label">时长秒</span>
-          <el-input-number
-            :model-value="composeIntroDuration"
-            :min="0.1"
-            :max="3600"
-            :step="0.5"
-            :precision="1"
-            size="small"
-            controls-position="right"
-            class="w-lg"
-            @change="(v: number | undefined) => emit('composeIntroDurationChange', typeof v === 'number' ? v : 3)"
-          />
-        </div>
-      </div>
-      <div class="opt-row opt-row-wrap">
-        <div class="opt-item opt-item-fill">
-          <span class="label">片尾图</span>
-          <el-input
-            :model-value="composeOutroPath"
-            size="small"
-            placeholder="可选：片尾静图路径"
-            class="w-5xl"
-            @update:model-value="(v: string) => emit('composeOutroPathChange', v)"
-          />
-          <el-button size="small" @click="emit('selectComposeOutroImage')">浏览</el-button>
-        </div>
-        <div class="opt-item">
-          <span class="label">时长秒</span>
-          <el-input-number
-            :model-value="composeOutroDuration"
-            :min="0.1"
-            :max="3600"
-            :step="0.5"
-            :precision="1"
-            size="small"
-            controls-position="right"
-            class="w-lg"
-            @change="(v: number | undefined) => emit('composeOutroDurationChange', typeof v === 'number' ? v : 3)"
-          />
-        </div>
-      </div>
-      <div class="opt-row opt-row-wrap">
-        <div class="opt-item opt-item-fill">
-          <span class="label">叠加图</span>
-          <el-input
-            :model-value="composeOverlayPath"
-            size="small"
-            placeholder="可选：叠到主视频上的图片"
-            class="w-5xl"
-            @update:model-value="(v: string) => emit('composeOverlayPathChange', v)"
-          />
-          <el-button size="small" @click="emit('selectComposeOverlayImage')">浏览</el-button>
-        </div>
-        <div class="opt-item">
-          <span class="label">位置</span>
-          <el-select
-            :model-value="composeOverlayPosition"
-            size="small"
-            class="w-2xl"
-            @change="(v: WatermarkPosition) => emit('composeOverlayPositionChange', v)"
-          >
-            <el-option
-              v-for="opt in WATERMARK_POSITION_OPTIONS"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </div>
-        <el-tooltip content="0–1" placement="top" :show-after="400">
-          <div class="opt-item">
-            <span class="label">透明度</span>
+            <span class="label">目标体积</span>
             <el-input-number
-              :model-value="composeOverlayOpacity"
+              :max="10240"
               :min="0"
-              :max="1"
-              :step="0.1"
-              :precision="2"
-              size="small"
-              controls-position="right"
-              class="w-lg"
-              @change="(v: number | undefined) => emit('composeOverlayOpacityChange', typeof v === 'number' ? v : 0.8)"
-            />
-          </div>
-        </el-tooltip>
-        <el-tooltip content="相对视频短边宽度 %" placement="top" :show-after="400">
-          <div class="opt-item">
-            <span class="label">缩放%</span>
-            <el-input-number
-              :model-value="composeOverlayScalePercent"
-              :min="1"
-              :max="100"
+              :model-value="targetSizeMb"
+              :precision="1"
               :step="1"
-              size="small"
-              controls-position="right"
               class="w-lg"
-              @change="(v: number | undefined) => emit('composeOverlayScalePercentChange', typeof v === 'number' ? v : 15)"
-            />
-          </div>
-        </el-tooltip>
-        <div class="opt-item">
-          <span class="label">边距</span>
-          <el-input-number
-            :model-value="composeOverlayMargin"
-            :min="0"
-            :max="500"
-            :step="1"
-            size="small"
-            controls-position="right"
-            class="w-lg"
-            @change="(v: number | undefined) => emit('composeOverlayMarginChange', typeof v === 'number' ? v : 16)"
-          />
-        </div>
-        <el-tooltip content="0 表示从开头" placement="top" :show-after="400">
-          <div class="opt-item">
-            <span class="label">起秒</span>
-            <el-input-number
-              :model-value="composeOverlayStartSec"
-              :min="0"
-              :max="86400"
-              :step="0.5"
-              :precision="1"
-              size="small"
               controls-position="right"
-              class="w-lg"
-              @change="(v: number | undefined) => emit('composeOverlayStartSecChange', typeof v === 'number' ? v : 0)"
-            />
-          </div>
-        </el-tooltip>
-        <el-tooltip content="0 表示到结尾" placement="top" :show-after="400">
-          <div class="opt-item">
-            <span class="label">止秒</span>
-            <el-input-number
-              :model-value="composeOverlayEndSec"
-              :min="0"
-              :max="86400"
-              :step="0.5"
-              :precision="1"
               size="small"
-              controls-position="right"
-              class="w-lg"
-              @change="(v: number | undefined) => emit('composeOverlayEndSecChange', typeof v === 'number' ? v : 0)"
+              @change="(v: number | undefined) => emit('targetSizeMbChange', typeof v === 'number' ? v : 0)"
             />
+            <span class="hint-inline hint-inline--tight">MB，0=不限制</span>
           </div>
-        </el-tooltip>
-      </div>
-    </template>
-
-    <div v-if="taskMode === 'image-stitch'" class="opt-row opt-row-wrap">
-      <span class="hint-inline">
-        单任务布局与顺序可在「编辑拼接顺序」弹窗中调整；下方为新建任务默认值
-      </span>
-      <div class="opt-item">
-        <span class="label">布局</span>
-        <el-select
-          :model-value="imageLayout"
-          size="small"
-          class="w-2xl"
-          @change="(v: 'horizontal' | 'vertical' | 'grid') => emit('imageLayoutChange', v)"
-        >
-          <el-option
-            v-for="opt in IMAGE_LAYOUT_OPTIONS"
-            :key="opt.value"
-            :label="opt.label"
-            :value="opt.value"
-          />
-        </el-select>
-      </div>
-      <div v-if="imageLayout === 'grid'" class="opt-item">
-        <span class="label">列数</span>
-        <el-input-number
-          :model-value="imageGridCols"
-          :min="1"
-          :max="20"
-          :step="1"
-          size="small"
-          controls-position="right"
-          class="w-lg"
-          @change="(v: number | undefined) => emit('imageGridColsChange', typeof v === 'number' ? v : 2)"
-        />
-      </div>
-      <div class="opt-item">
-        <span class="label">间距</span>
-        <el-input-number
-          :model-value="imageGap"
-          :min="0"
-          :max="500"
-          :step="1"
-          size="small"
-          controls-position="right"
-          class="w-lg"
-          @change="(v: number | undefined) => emit('imageGapChange', typeof v === 'number' ? v : 0)"
-        />
-        <span class="hint-inline hint-inline--tight">px</span>
-      </div>
-      <div class="opt-item">
-        <span class="label">背景</span>
-        <el-input
-          :model-value="imageBackground"
-          size="small"
-          placeholder="#000000"
-          class="w-3xl"
-          @update:model-value="(v: string) => emit('imageBackgroundChange', v)"
-        />
-      </div>
-    </div>
-
-    <!-- 第二行：输出位置 / 命名 -->
-    <div class="opt-row opt-row-output">
-      <div class="opt-item opt-output">
-        <span class="label">输出位置</span>
-        <el-select
-          :model-value="outputDirMode"
-          size="small"
-          class="w-2xl"
-          @change="(v: OutputDirMode) => emit('outputDirModeChange', v)"
-        >
-          <el-option
-            v-for="opt in OUTPUT_DIR_MODE_OPTIONS"
-            :key="opt.value"
-            :label="opt.label"
-            :value="opt.value"
-          />
-        </el-select>
-        <template v-if="outputDirMode !== 'sidecar'">
-          <el-button :icon="Folder" size="small" @click="emit('selectOutput')">
-            选择目录
-          </el-button>
-          <el-tooltip :content="outputDir || '未选择输出目录'" placement="top" :show-after="400">
-            <span class="path-text output-path">
-              {{ outputDir || '未选择输出目录' }}
-            </span>
+          <el-tooltip
+            v-if="targetSizeMb > 0"
+            :show-after="400"
+            content="仅软件 x264/VP9；硬件自动单遍"
+            placement="top"
+          >
+            <div class="opt-item">
+              <span class="label">两遍编码</span>
+              <el-switch
+                :model-value="twoPass"
+                size="small"
+                @change="(v: string | number | boolean) => emit('twoPassChange', Boolean(v))"
+              />
+              <span class="hint-inline hint-inline--tight">更准更慢</span>
+            </div>
           </el-tooltip>
-        </template>
-        <span v-else class="hint-inline">与源文件同目录</span>
-      </div>
+          <el-tooltip :content="encoderTitle(isWebm, encoderInfo)" :show-after="400" placement="top">
+            <div class="opt-item">
+              <span class="label">编码器</span>
+              <el-select
+                :disabled="isWebm"
+                :model-value="encoder"
+                class="w-4xl"
+                size="small"
+                @change="(v: EncoderId) => emit('encoderChange', v)"
+              >
+                <el-option
+                  v-for="opt in ENCODER_OPTIONS"
+                  :key="opt.value"
+                  :disabled="!isEncoderOptionAvailable(opt.value)"
+                  :label="encoderOptionLabel(opt)"
+                  :value="opt.value"
+                />
+              </el-select>
+              <span v-if="encoderChips.length" class="encoder-chips">
+                <span
+                  v-for="c in encoderChips"
+                  :key="c.key"
+                  :class="{ ok: c.ok, bad: !c.ok }"
+                  class="encoder-chip"
+                >
+                  {{ c.label }}{{ c.ok ? '✓' : '–' }}
+                </span>
+              </span>
+            </div>
+          </el-tooltip>
+        </div>
+        <div class="opt-row opt-row-output">
+          <div class="opt-item opt-output">
+            <span class="label">输出目录</span>
+            <el-select
+              :model-value="outputDirMode"
+              class="w-2xl"
+              size="small"
+              @change="(v: OutputDirMode) => emit('outputDirModeChange', v)"
+            >
+              <el-option
+                v-for="opt in OUTPUT_DIR_MODE_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+            <template v-if="outputDirMode !== 'sidecar'">
+              <el-button :icon="Folder" size="small" @click="emit('selectOutput')">
+                选择目录
+              </el-button>
+              <el-tooltip :content="outputDir || '未选择输出目录'" :show-after="400" placement="top">
+                <span class="path-text output-path">
+                  {{ outputDir || '未选择输出目录' }}
+                </span>
+              </el-tooltip>
+            </template>
+            <span v-else class="hint-inline">与源文件同目录</span>
+          </div>
+        </div>
+      </template>
 
-      <div class="opt-divider" aria-hidden="true" />
+      <!-- audio -->
+      <template v-else-if="isAudioMode">
+        <div class="opt-row opt-row-wrap">
+          <div class="opt-item">
+            <span class="label">输出格式</span>
+            <el-select
+              :model-value="audioFormat"
+              class="w-3xl"
+              size="small"
+              @change="(v: AudioFormat) => emit('audioFormatChange', v)"
+            >
+              <el-option
+                v-for="opt in AUDIO_FORMAT_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+          </div>
+          <div class="opt-item">
+            <span class="label">码率</span>
+            <el-select
+              :model-value="audioBitrate"
+              class="w-md"
+              size="small"
+              @change="(v: string) => emit('audioBitrateChange', v)"
+            >
+              <el-option
+                v-for="br in AUDIO_BITRATE_OPTIONS"
+                :key="br"
+                :label="br"
+                :value="br"
+              />
+            </el-select>
+          </div>
+          <el-tooltip :show-after="400" content="0 = 不裁剪 / 到结尾" placement="top">
+            <div class="opt-item">
+              <span class="label">抽取时段</span>
+              <span class="hint-inline hint-inline--tight">开始(秒)</span>
+              <el-input-number
+                :max="86400"
+                :min="0"
+                :model-value="trimStart"
+                :precision="1"
+                :step="1"
+                class="w-lg"
+                controls-position="right"
+                size="small"
+                @change="(v: number | undefined) => emit('trimStartChange', typeof v === 'number' ? v : 0)"
+              />
+              <span class="hint-inline hint-inline--tight">结束(秒)</span>
+              <el-input-number
+                :max="86400"
+                :min="0"
+                :model-value="trimEnd"
+                :precision="1"
+                :step="1"
+                class="w-lg"
+                controls-position="right"
+                size="small"
+                @change="(v: number | undefined) => emit('trimEndChange', typeof v === 'number' ? v : 0)"
+              />
+            </div>
+          </el-tooltip>
+        </div>
+        <div class="opt-row opt-row-output">
+          <div class="opt-item opt-output">
+            <span class="label">输出目录</span>
+            <el-select
+              :model-value="outputDirMode"
+              class="w-2xl"
+              size="small"
+              @change="(v: OutputDirMode) => emit('outputDirModeChange', v)"
+            >
+              <el-option
+                v-for="opt in OUTPUT_DIR_MODE_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+            <template v-if="outputDirMode !== 'sidecar'">
+              <el-button :icon="Folder" size="small" @click="emit('selectOutput')">
+                选择目录
+              </el-button>
+              <el-tooltip :content="outputDir || '未选择输出目录'" :show-after="400" placement="top">
+                <span class="path-text output-path">
+                  {{ outputDir || '未选择输出目录' }}
+                </span>
+              </el-tooltip>
+            </template>
+            <span v-else class="hint-inline">与源文件同目录</span>
+          </div>
+        </div>
+      </template>
 
-      <div class="opt-item opt-item-fill">
-        <span class="label">输出命名</span>
-        <el-select
-          :model-value="nameSelectValue(nameTemplate, nameTemplateCustom)"
-          size="small"
-          class="w-4xl"
-          @change="(v: string) => emit('nameTemplateChange', v)"
-        >
-          <el-option
-            v-for="opt in NAME_TEMPLATE_OPTIONS"
-            :key="opt.id"
-            :label="opt.label"
-            :value="opt.value"
-          />
-        </el-select>
-        <el-input
-          v-if="nameTemplateCustom || nameSelectValue(nameTemplate, nameTemplateCustom) === '__custom__'"
-          :model-value="nameTemplate === '__custom__' ? '' : nameTemplate"
-          size="small"
-          :placeholder="
-            isAudioMode
-              ? '{name}_audio'
-              : isImageMode
-                ? '{name}_img'
-                : isVideoConcatMode
-                  ? '{name}_concat'
-                  : isMediaComposeMode
-                    ? '{name}_compose'
-                    : isVideoMosaicMode
-                      ? '{name}_mosaic'
-                      : '{name}_{preset}'
-          "
-          class="w-4xl name-template-input"
-          @update:model-value="(v: string) => emit('customNameTemplateInput', v)"
+      <!-- image compress -->
+      <template v-else-if="isImageCompressMode">
+        <div class="opt-row opt-row-wrap">
+          <div class="opt-item">
+            <span class="label">输出格式</span>
+            <el-select
+              :model-value="imageFormat"
+              class="w-3xl"
+              size="small"
+              @change="(v: 'jpeg' | 'png' | 'webp' | 'keep') => emit('imageFormatChange', v)"
+            >
+              <el-option
+                v-for="opt in IMAGE_FORMAT_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+          </div>
+          <div class="opt-item">
+            <el-tooltip :show-after="400" content="JPEG / WebP 有效" placement="top">
+              <span class="label">质量</span>
+            </el-tooltip>
+            <el-slider
+              v-model="imageQualityDraft"
+              :max="100"
+              :min="1"
+              :step="1"
+              class="w-quality"
+              size="small"
+              @change="onImageQualityCommit"
+            />
+            <span class="hint-inline hint-inline--tight">{{ imageQualityDraft }}</span>
+          </div>
+          <el-tooltip :show-after="400" content="0 = 不限制" placement="top">
+            <div class="opt-item">
+              <span class="label">最长边</span>
+              <el-input-number
+                :max="7680"
+                :min="0"
+                :model-value="imageMaxEdge"
+                :step="10"
+                class="w-lg"
+                controls-position="right"
+                size="small"
+                @change="(v: number | undefined) => emit('imageMaxEdgeChange', typeof v === 'number' ? v : 0)"
+              />
+            </div>
+          </el-tooltip>
+          <el-tooltip :show-after="400" content="去掉 EXIF 等元数据" placement="top">
+            <div class="opt-item">
+              <span class="label">去元数据</span>
+              <el-switch
+                :model-value="imageStrip"
+                size="small"
+                @change="(v: string | number | boolean) => emit('imageStripChange', Boolean(v))"
+              />
+            </div>
+          </el-tooltip>
+        </div>
+      </template>
+
+      <!-- image-crop -->
+      <template v-else-if="isImageCropMode">
+        <div class="opt-row opt-row-wrap">
+          <el-tooltip :show-after="400" content="原图像素坐标，宽高须 > 0" placement="top">
+            <div class="opt-item">
+              <span class="label">X</span>
+              <el-input-number
+                :max="20000"
+                :min="0"
+                :model-value="cropX"
+                :step="1"
+                class="w-lg"
+                controls-position="right"
+                size="small"
+                @change="(v: number | undefined) => emit('cropXChange', typeof v === 'number' ? v : 0)"
+              />
+            </div>
+          </el-tooltip>
+          <div class="opt-item">
+            <span class="label">Y</span>
+            <el-input-number
+              :max="20000"
+              :min="0"
+              :model-value="cropY"
+              :step="1"
+              class="w-lg"
+              controls-position="right"
+              size="small"
+              @change="(v: number | undefined) => emit('cropYChange', typeof v === 'number' ? v : 0)"
+            />
+          </div>
+          <div class="opt-item">
+            <span class="label">宽</span>
+            <el-input-number
+              :max="20000"
+              :min="0"
+              :model-value="cropW"
+              :step="1"
+              class="w-lg"
+              controls-position="right"
+              size="small"
+              @change="(v: number | undefined) => emit('cropWChange', typeof v === 'number' ? v : 0)"
+            />
+          </div>
+          <div class="opt-item">
+            <span class="label">高</span>
+            <el-input-number
+              :max="20000"
+              :min="0"
+              :model-value="cropH"
+              :step="1"
+              class="w-lg"
+              controls-position="right"
+              size="small"
+              @change="(v: number | undefined) => emit('cropHChange', typeof v === 'number' ? v : 0)"
+            />
+          </div>
+          <div class="opt-item opt-entry">
+            <el-button plain size="small" type="primary" @click="openVisualCrop">
+              打开裁切画布
+            </el-button>
+          </div>
+        </div>
+      </template>
+
+      <!-- image-stitch -->
+      <template v-else-if="isImageStitchMode">
+        <div class="opt-row opt-row-wrap">
+          <span class="hint-inline opt-hint-block">
+            调整顺序：在任务表行内点「编辑拼接顺序」；下方为新建任务默认布局
+          </span>
+          <div class="opt-item">
+            <span class="label">布局</span>
+            <el-select
+              :model-value="imageLayout"
+              class="w-2xl"
+              size="small"
+              @change="(v: 'horizontal' | 'vertical' | 'grid') => emit('imageLayoutChange', v)"
+            >
+              <el-option
+                v-for="opt in IMAGE_LAYOUT_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+          </div>
+          <div v-if="imageLayout === 'grid'" class="opt-item">
+            <span class="label">列数</span>
+            <el-input-number
+              :max="20"
+              :min="1"
+              :model-value="imageGridCols"
+              :step="1"
+              class="w-lg"
+              controls-position="right"
+              size="small"
+              @change="(v: number | undefined) => emit('imageGridColsChange', typeof v === 'number' ? v : 2)"
+            />
+          </div>
+          <div class="opt-item">
+            <span class="label">间距</span>
+            <el-input-number
+              :max="500"
+              :min="0"
+              :model-value="imageGap"
+              :step="1"
+              class="w-lg"
+              controls-position="right"
+              size="small"
+              @change="(v: number | undefined) => emit('imageGapChange', typeof v === 'number' ? v : 0)"
+            />
+            <span class="hint-inline hint-inline--tight">px</span>
+          </div>
+          <div class="opt-item">
+            <span class="label">背景</span>
+            <el-input
+              :model-value="imageBackground"
+              class="w-3xl"
+              placeholder="#000000"
+              size="small"
+              @update:model-value="(v: string) => emit('imageBackgroundChange', v)"
+            />
+          </div>
+        </div>
+      </template>
+
+      <!-- video-concat -->
+      <template v-else-if="isVideoConcatMode">
+        <div class="opt-row opt-row-wrap">
+          <span class="hint-inline opt-hint-block">
+            调整顺序：在任务表行内点「编辑拼接顺序」，弹窗内可拖拽
+          </span>
+          <el-tooltip :show-after="400" content="编码参数一致时可流复制，更快；失败则按高级区回退编码器重编码" placement="top">
+            <div class="opt-item">
+              <span class="label">优先流复制</span>
+              <el-switch
+                :model-value="concatPreferCopy"
+                size="small"
+                @change="(v: string | number | boolean) => emit('concatPreferCopyChange', Boolean(v))"
+              />
+              <span class="hint-inline hint-inline--tight">更快，要求编码一致</span>
+            </div>
+          </el-tooltip>
+          <span class="hint-inline">无独立「输出容器 / 对齐」字段；现有逻辑随源自动处理</span>
+        </div>
+        <div class="opt-row opt-row-output">
+          <div class="opt-item opt-output">
+            <span class="label">输出目录</span>
+            <el-select
+              :model-value="outputDirMode"
+              class="w-2xl"
+              size="small"
+              @change="(v: OutputDirMode) => emit('outputDirModeChange', v)"
+            >
+              <el-option
+                v-for="opt in OUTPUT_DIR_MODE_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+            <template v-if="outputDirMode !== 'sidecar'">
+              <el-button :icon="Folder" size="small" @click="emit('selectOutput')">
+                选择目录
+              </el-button>
+              <el-tooltip :content="outputDir || '未选择输出目录'" :show-after="400" placement="top">
+                <span class="path-text output-path">
+                  {{ outputDir || '未选择输出目录' }}
+                </span>
+              </el-tooltip>
+            </template>
+            <span v-else class="hint-inline">与源文件同目录</span>
+          </div>
+        </div>
+      </template>
+
+      <!-- media-compose -->
+      <template v-else-if="isMediaComposeMode">
+        <el-alert
+          v-if="!hasComposeAssets"
+          :closable="false"
+          class="compose-empty-alert"
+          show-icon
+          title="先选片头 / 片尾 / 叠加图，再添加主视频"
+          type="info"
         />
-      </div>
+        <p v-else class="compose-summary">
+          {{ composeAssetsSummary }} · 无独立时间线预览，启动后按参数合成
+        </p>
+        <div class="opt-row opt-row-wrap">
+          <div class="opt-item opt-item-fill">
+            <span class="label">片头图</span>
+            <el-input
+              :model-value="composeIntroPath"
+              class="w-5xl"
+              placeholder="可选：片头静图路径"
+              size="small"
+              @update:model-value="(v: string) => emit('composeIntroPathChange', v)"
+            />
+            <el-button size="small" @click="emit('selectComposeIntroImage')">浏览</el-button>
+          </div>
+          <div class="opt-item">
+            <span class="label">片头时长</span>
+            <el-input-number
+              :max="3600"
+              :min="0.1"
+              :model-value="composeIntroDuration"
+              :precision="1"
+              :step="0.5"
+              class="w-lg"
+              controls-position="right"
+              size="small"
+              @change="(v: number | undefined) => emit('composeIntroDurationChange', typeof v === 'number' ? v : 3)"
+            />
+            <span class="hint-inline hint-inline--tight">秒</span>
+          </div>
+        </div>
+        <div class="opt-row opt-row-wrap">
+          <div class="opt-item opt-item-fill">
+            <span class="label">片尾图</span>
+            <el-input
+              :model-value="composeOutroPath"
+              class="w-5xl"
+              placeholder="可选：片尾静图路径"
+              size="small"
+              @update:model-value="(v: string) => emit('composeOutroPathChange', v)"
+            />
+            <el-button size="small" @click="emit('selectComposeOutroImage')">浏览</el-button>
+          </div>
+          <div class="opt-item">
+            <span class="label">片尾时长</span>
+            <el-input-number
+              :max="3600"
+              :min="0.1"
+              :model-value="composeOutroDuration"
+              :precision="1"
+              :step="0.5"
+              class="w-lg"
+              controls-position="right"
+              size="small"
+              @change="(v: number | undefined) => emit('composeOutroDurationChange', typeof v === 'number' ? v : 3)"
+            />
+            <span class="hint-inline hint-inline--tight">秒</span>
+          </div>
+        </div>
+        <div class="opt-row opt-row-wrap">
+          <el-tooltip :show-after="400" content="片头尾静图缩放到主视频尺寸并黑边填充" placement="top">
+            <div class="opt-item">
+              <span class="label">匹配主视频尺寸</span>
+              <el-switch
+                :model-value="composeFitIntroOutro"
+                size="small"
+                @change="(v: string | number | boolean) => emit('composeFitIntroOutroChange', Boolean(v))"
+              />
+              <span class="hint-inline">主视频从任务列表添加</span>
+            </div>
+          </el-tooltip>
+        </div>
+      </template>
+
+      <!-- video-mosaic -->
+      <template v-else-if="isVideoMosaicMode">
+        <div class="opt-row opt-row-wrap">
+          <span class="hint-inline opt-hint-block">
+            打码为单任务工作台：拖入单个视频，编辑区域后开始打码。「全部开始」不适用。
+          </span>
+          <el-tooltip
+            :show-after="400"
+            content="关闭：FFmpeg 滤镜一次编码（推荐）。开启：抽出全部帧为 JPEG，用 Sharp 打码后再封装——更慢、临时盘占用大，适合对照或特殊需求。"
+            placement="top"
+          >
+            <div class="opt-item">
+              <span class="label">逐帧流水线</span>
+              <el-switch
+                :model-value="mosaicFrameByFrame"
+                size="small"
+                @change="(v: string | number | boolean) => emit('mosaicFrameByFrameChange', Boolean(v))"
+              />
+              <span class="hint-inline hint-inline--tight">
+                {{ mosaicFrameByFrame ? '抽帧→打码→封装' : '滤镜一次编码' }}
+              </span>
+            </div>
+          </el-tooltip>
+          <span class="hint-inline">接近原画导出（CRF 18 · 原分辨率 · MP4 · 软件编码）</span>
+        </div>
+        <div class="opt-row opt-row-output">
+          <div class="opt-item opt-output">
+            <span class="label">输出目录</span>
+            <el-select
+              :model-value="outputDirMode"
+              class="w-2xl"
+              size="small"
+              @change="(v: OutputDirMode) => emit('outputDirModeChange', v)"
+            >
+              <el-option
+                v-for="opt in OUTPUT_DIR_MODE_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+            <template v-if="outputDirMode !== 'sidecar'">
+              <el-button :icon="Folder" size="small" @click="emit('selectOutput')">
+                选择目录
+              </el-button>
+              <el-tooltip :content="outputDir || '未选择输出目录'" :show-after="400" placement="top">
+                <span class="path-text output-path">
+                  {{ outputDir || '未选择输出目录' }}
+                </span>
+              </el-tooltip>
+            </template>
+            <span v-else class="hint-inline">与源文件同目录</span>
+          </div>
+          <div aria-hidden="true" class="opt-divider" />
+          <div class="opt-item opt-item-fill">
+            <span class="label">输出命名</span>
+            <el-select
+              :model-value="nameSelectValue(nameTemplate, nameTemplateCustom)"
+              class="w-4xl"
+              size="small"
+              @change="(v: string) => emit('nameTemplateChange', v)"
+            >
+              <el-option
+                v-for="opt in NAME_TEMPLATE_OPTIONS"
+                :key="opt.id"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+            <el-input
+              v-if="nameTemplateCustom || nameSelectValue(nameTemplate, nameTemplateCustom) === '__custom__'"
+              :model-value="nameTemplate === '__custom__' ? '' : nameTemplate"
+              :placeholder="nameTemplatePlaceholder"
+              class="w-4xl name-template-input"
+              size="small"
+              @update:model-value="(v: string) => emit('customNameTemplateInput', v)"
+            />
+          </div>
+        </div>
+      </template>
     </div>
 
-    <!-- 高级：编码 / 裁剪 / 体积 / 自定义（图片 / 视频拼接 / 混剪 / 打码隐藏视频压缩高级项） -->
-    <div
-      v-if="!isImageMode && !isVideoConcatMode && !isMediaComposeMode && !isVideoMosaicMode"
-      class="opt-advanced"
-      :class="{ open: advancedOpen }"
-    >
+    <!-- 高级参数：右侧抽屉，避免挤占任务表 -->
+    <div v-if="showAdvancedSection" class="opt-advanced">
       <button
-        type="button"
-        class="opt-advanced-toggle"
         :aria-expanded="advancedOpen"
-        aria-controls="opt-advanced-body"
-        @click="advancedOpen = !advancedOpen"
+        aria-controls="opt-advanced-drawer"
+        class="opt-advanced-toggle"
+        type="button"
+        @click="advancedOpen = true"
       >
-        <span class="opt-advanced-chevron" :class="{ open: advancedOpen }">▸</span>
-        <span>{{
-          isAudioMode
-            ? '高级选项'
-            : '高级选项（水印 / 画面裁切 / 目标体积…）'
-        }}</span>
-        <span class="muted">{{ isAudioMode ? '并发 · 裁剪' : '编码 · 画面 · 水印 · 音频 · 裁剪' }}</span>
+        <span class="opt-advanced-chevron">▸</span>
+        <span>高级参数</span>
+        <span class="muted">{{ advancedSummary }}</span>
       </button>
+    </div>
 
-      <div v-show="advancedOpen" id="opt-advanced-body" class="opt-advanced-body">
+    <el-drawer
+      v-if="showAdvancedSection"
+      id="opt-advanced-drawer"
+      v-model="advancedOpen"
+      append-to-body
+      class="opt-advanced-drawer"
+      size="min(440px, 96%)"
+    >
+      <template #header>
+        <div class="adv-drawer-head">
+          <div class="adv-drawer-title">高级参数</div>
+          <div class="adv-drawer-sub">{{ modeTitle }} · {{ advancedSummary }}</div>
+        </div>
+      </template>
+      <div class="opt-advanced-body">
+        <!-- audio 高级：命名 · 并发 -->
         <template v-if="isAudioMode">
+          <div class="opt-row opt-row-wrap">
+            <div class="opt-item opt-item-fill">
+              <span class="label">输出命名</span>
+              <el-select
+                :model-value="nameSelectValue(nameTemplate, nameTemplateCustom)"
+                class="w-4xl"
+                size="small"
+                @change="(v: string) => emit('nameTemplateChange', v)"
+              >
+                <el-option
+                  v-for="opt in NAME_TEMPLATE_OPTIONS"
+                  :key="opt.id"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <el-input
+                v-if="nameTemplateCustom || nameSelectValue(nameTemplate, nameTemplateCustom) === '__custom__'"
+                :model-value="nameTemplate === '__custom__' ? '' : nameTemplate"
+                :placeholder="nameTemplatePlaceholder"
+                class="w-4xl name-template-input"
+                size="small"
+                @update:model-value="(v: string) => emit('customNameTemplateInput', v)"
+              />
+            </div>
+            <el-tooltip :content="CONCURRENCY_HINT" :show-after="400" placement="top">
+              <div class="opt-item">
+                <span class="label">并发数</span>
+                <el-select
+                  :model-value="concurrency"
+                  class="w-xs"
+                  size="small"
+                  @change="(v: number) => emit('concurrencyChange', v)"
+                >
+                  <el-option
+                    v-for="n in CONCURRENCY_OPTIONS"
+                    :key="n"
+                    :label="String(n)"
+                    :value="n"
+                  />
+                </el-select>
+              </div>
+            </el-tooltip>
+          </div>
+        </template>
+
+        <!-- image 压缩高级：输出目录 · 命名 · 并发 -->
+        <template v-else-if="isImageCompressMode">
+          <div class="opt-row opt-row-output">
+            <div class="opt-item opt-output">
+              <span class="label">输出目录</span>
+              <el-select
+                :model-value="outputDirMode"
+                class="w-2xl"
+                size="small"
+                @change="(v: OutputDirMode) => emit('outputDirModeChange', v)"
+              >
+                <el-option
+                  v-for="opt in OUTPUT_DIR_MODE_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <template v-if="outputDirMode !== 'sidecar'">
+                <el-button :icon="Folder" size="small" @click="emit('selectOutput')">
+                  选择目录
+                </el-button>
+                <el-tooltip :content="outputDir || '未选择输出目录'" :show-after="400" placement="top">
+                  <span class="path-text output-path">
+                    {{ outputDir || '未选择输出目录' }}
+                  </span>
+                </el-tooltip>
+              </template>
+              <span v-else class="hint-inline">与源文件同目录</span>
+            </div>
+            <div aria-hidden="true" class="opt-divider" />
+            <div class="opt-item opt-item-fill">
+              <span class="label">输出命名</span>
+              <el-select
+                :model-value="nameSelectValue(nameTemplate, nameTemplateCustom)"
+                class="w-4xl"
+                size="small"
+                @change="(v: string) => emit('nameTemplateChange', v)"
+              >
+                <el-option
+                  v-for="opt in NAME_TEMPLATE_OPTIONS"
+                  :key="opt.id"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <el-input
+                v-if="nameTemplateCustom || nameSelectValue(nameTemplate, nameTemplateCustom) === '__custom__'"
+                :model-value="nameTemplate === '__custom__' ? '' : nameTemplate"
+                :placeholder="nameTemplatePlaceholder"
+                class="w-4xl name-template-input"
+                size="small"
+                @update:model-value="(v: string) => emit('customNameTemplateInput', v)"
+              />
+            </div>
+          </div>
+          <div class="opt-row">
+            <el-tooltip :content="CONCURRENCY_HINT" :show-after="400" placement="top">
+              <div class="opt-item">
+                <span class="label">并发数</span>
+                <el-select
+                  :model-value="concurrency"
+                  class="w-xs"
+                  size="small"
+                  @change="(v: number) => emit('concurrencyChange', v)"
+                >
+                  <el-option
+                    v-for="n in CONCURRENCY_OPTIONS"
+                    :key="n"
+                    :label="String(n)"
+                    :value="n"
+                  />
+                </el-select>
+              </div>
+            </el-tooltip>
+          </div>
+        </template>
+
+        <!-- image-crop 高级：格式 · 目录 · 命名 · 并发 -->
+        <template v-else-if="isImageCropMode">
+          <div class="opt-row opt-row-wrap">
+            <div class="opt-item">
+              <span class="label">输出格式</span>
+              <el-select
+                :model-value="imageFormat"
+                class="w-3xl"
+                size="small"
+                @change="(v: 'jpeg' | 'png' | 'webp' | 'keep') => emit('imageFormatChange', v)"
+              >
+                <el-option
+                  v-for="opt in IMAGE_FORMAT_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </div>
+            <div class="opt-item opt-entry">
+              <el-button plain size="small" type="primary" @click="openVisualCrop">
+                打开裁切画布
+              </el-button>
+            </div>
+          </div>
+          <div class="opt-row opt-row-output">
+            <div class="opt-item opt-output">
+              <span class="label">输出目录</span>
+              <el-select
+                :model-value="outputDirMode"
+                class="w-2xl"
+                size="small"
+                @change="(v: OutputDirMode) => emit('outputDirModeChange', v)"
+              >
+                <el-option
+                  v-for="opt in OUTPUT_DIR_MODE_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <template v-if="outputDirMode !== 'sidecar'">
+                <el-button :icon="Folder" size="small" @click="emit('selectOutput')">
+                  选择目录
+                </el-button>
+                <el-tooltip :content="outputDir || '未选择输出目录'" :show-after="400" placement="top">
+                  <span class="path-text output-path">
+                    {{ outputDir || '未选择输出目录' }}
+                  </span>
+                </el-tooltip>
+              </template>
+              <span v-else class="hint-inline">与源文件同目录</span>
+            </div>
+            <div aria-hidden="true" class="opt-divider" />
+            <div class="opt-item opt-item-fill">
+              <span class="label">输出命名</span>
+              <el-select
+                :model-value="nameSelectValue(nameTemplate, nameTemplateCustom)"
+                class="w-4xl"
+                size="small"
+                @change="(v: string) => emit('nameTemplateChange', v)"
+              >
+                <el-option
+                  v-for="opt in NAME_TEMPLATE_OPTIONS"
+                  :key="opt.id"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <el-input
+                v-if="nameTemplateCustom || nameSelectValue(nameTemplate, nameTemplateCustom) === '__custom__'"
+                :model-value="nameTemplate === '__custom__' ? '' : nameTemplate"
+                :placeholder="nameTemplatePlaceholder"
+                class="w-4xl name-template-input"
+                size="small"
+                @update:model-value="(v: string) => emit('customNameTemplateInput', v)"
+              />
+            </div>
+          </div>
+          <div class="opt-row">
+            <el-tooltip :content="CONCURRENCY_HINT" :show-after="400" placement="top">
+              <div class="opt-item">
+                <span class="label">并发数</span>
+                <el-select
+                  :model-value="concurrency"
+                  class="w-xs"
+                  size="small"
+                  @change="(v: number) => emit('concurrencyChange', v)"
+                >
+                  <el-option
+                    v-for="n in CONCURRENCY_OPTIONS"
+                    :key="n"
+                    :label="String(n)"
+                    :value="n"
+                  />
+                </el-select>
+              </div>
+            </el-tooltip>
+          </div>
+        </template>
+
+        <!-- image-stitch 高级：格式 · 最长边 · 目录 · 命名 · 并发 -->
+        <template v-else-if="isImageStitchMode">
+          <div class="opt-row opt-row-wrap">
+            <div class="opt-item">
+              <span class="label">输出格式</span>
+              <el-select
+                :model-value="imageFormat"
+                class="w-3xl"
+                size="small"
+                @change="(v: 'jpeg' | 'png' | 'webp' | 'keep') => emit('imageFormatChange', v)"
+              >
+                <el-option
+                  v-for="opt in IMAGE_FORMAT_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </div>
+            <el-tooltip :show-after="400" content="0 = 不限制" placement="top">
+              <div class="opt-item">
+                <span class="label">最长边</span>
+                <el-input-number
+                  :max="7680"
+                  :min="0"
+                  :model-value="imageMaxEdge"
+                  :step="10"
+                  class="w-lg"
+                  controls-position="right"
+                  size="small"
+                  @change="(v: number | undefined) => emit('imageMaxEdgeChange', typeof v === 'number' ? v : 0)"
+                />
+              </div>
+            </el-tooltip>
+          </div>
+          <div class="opt-row opt-row-output">
+            <div class="opt-item opt-output">
+              <span class="label">输出目录</span>
+              <el-select
+                :model-value="outputDirMode"
+                class="w-2xl"
+                size="small"
+                @change="(v: OutputDirMode) => emit('outputDirModeChange', v)"
+              >
+                <el-option
+                  v-for="opt in OUTPUT_DIR_MODE_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <template v-if="outputDirMode !== 'sidecar'">
+                <el-button :icon="Folder" size="small" @click="emit('selectOutput')">
+                  选择目录
+                </el-button>
+                <el-tooltip :content="outputDir || '未选择输出目录'" :show-after="400" placement="top">
+                  <span class="path-text output-path">
+                    {{ outputDir || '未选择输出目录' }}
+                  </span>
+                </el-tooltip>
+              </template>
+              <span v-else class="hint-inline">与源文件同目录</span>
+            </div>
+            <div aria-hidden="true" class="opt-divider" />
+            <div class="opt-item opt-item-fill">
+              <span class="label">输出命名</span>
+              <el-select
+                :model-value="nameSelectValue(nameTemplate, nameTemplateCustom)"
+                class="w-4xl"
+                size="small"
+                @change="(v: string) => emit('nameTemplateChange', v)"
+              >
+                <el-option
+                  v-for="opt in NAME_TEMPLATE_OPTIONS"
+                  :key="opt.id"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <el-input
+                v-if="nameTemplateCustom || nameSelectValue(nameTemplate, nameTemplateCustom) === '__custom__'"
+                :model-value="nameTemplate === '__custom__' ? '' : nameTemplate"
+                :placeholder="nameTemplatePlaceholder"
+                class="w-4xl name-template-input"
+                size="small"
+                @update:model-value="(v: string) => emit('customNameTemplateInput', v)"
+              />
+            </div>
+          </div>
+          <div class="opt-row">
+            <el-tooltip :content="CONCURRENCY_HINT" :show-after="400" placement="top">
+              <div class="opt-item">
+                <span class="label">并发数</span>
+                <el-select
+                  :model-value="concurrency"
+                  class="w-xs"
+                  size="small"
+                  @change="(v: number) => emit('concurrencyChange', v)"
+                >
+                  <el-option
+                    v-for="n in CONCURRENCY_OPTIONS"
+                    :key="n"
+                    :label="String(n)"
+                    :value="n"
+                  />
+                </el-select>
+              </div>
+            </el-tooltip>
+          </div>
+        </template>
+
+        <!-- video-concat 高级：回退编码器 · 命名 · 并发 -->
+        <template v-else-if="isVideoConcatMode">
+          <div class="opt-row opt-row-wrap">
+            <el-tooltip :show-after="400" content="流复制失败时按此编码器重编码" placement="top">
+              <div class="opt-item">
+                <span class="label">回退编码器</span>
+                <el-select
+                  :model-value="encoder"
+                  class="w-4xl"
+                  size="small"
+                  @change="(v: EncoderId) => emit('encoderChange', v)"
+                >
+                  <el-option
+                    v-for="opt in ENCODER_OPTIONS"
+                    :key="opt.value"
+                    :disabled="!isEncoderOptionAvailable(opt.value)"
+                    :label="encoderOptionLabel(opt)"
+                    :value="opt.value"
+                  />
+                </el-select>
+                <span v-if="encoderChips.length" class="encoder-chips">
+                  <span
+                    v-for="c in encoderChips"
+                    :key="c.key"
+                    :class="{ ok: c.ok, bad: !c.ok }"
+                    class="encoder-chip"
+                  >
+                    {{ c.label }}{{ c.ok ? '✓' : '–' }}
+                  </span>
+                </span>
+              </div>
+            </el-tooltip>
+            <div class="opt-item opt-item-fill">
+              <span class="label">输出命名</span>
+              <el-select
+                :model-value="nameSelectValue(nameTemplate, nameTemplateCustom)"
+                class="w-4xl"
+                size="small"
+                @change="(v: string) => emit('nameTemplateChange', v)"
+              >
+                <el-option
+                  v-for="opt in NAME_TEMPLATE_OPTIONS"
+                  :key="opt.id"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <el-input
+                v-if="nameTemplateCustom || nameSelectValue(nameTemplate, nameTemplateCustom) === '__custom__'"
+                :model-value="nameTemplate === '__custom__' ? '' : nameTemplate"
+                :placeholder="nameTemplatePlaceholder"
+                class="w-4xl name-template-input"
+                size="small"
+                @update:model-value="(v: string) => emit('customNameTemplateInput', v)"
+              />
+            </div>
+            <el-tooltip :content="CONCURRENCY_HINT" :show-after="400" placement="top">
+              <div class="opt-item">
+                <span class="label">并发数</span>
+                <el-select
+                  :model-value="concurrency"
+                  class="w-xs"
+                  size="small"
+                  @change="(v: number) => emit('concurrencyChange', v)"
+                >
+                  <el-option
+                    v-for="n in CONCURRENCY_OPTIONS"
+                    :key="n"
+                    :label="String(n)"
+                    :value="n"
+                  />
+                </el-select>
+              </div>
+            </el-tooltip>
+          </div>
+          <span class="hint-inline">现有字段无「过渡」选项</span>
+        </template>
+
+        <!-- media-compose 高级：叠加层 · 编码器 · 命名 · 输出 · 并发 -->
+        <template v-else-if="isMediaComposeMode">
+          <div class="opt-row opt-row-wrap">
+            <div class="opt-item opt-item-fill">
+              <span class="label">叠加图</span>
+              <el-input
+                :model-value="composeOverlayPath"
+                class="w-5xl"
+                placeholder="可选：叠到主视频上的图片"
+                size="small"
+                @update:model-value="(v: string) => emit('composeOverlayPathChange', v)"
+              />
+              <el-button size="small" @click="emit('selectComposeOverlayImage')">浏览</el-button>
+            </div>
+            <div class="opt-item">
+              <span class="label">位置</span>
+              <el-select
+                :model-value="composeOverlayPosition"
+                class="w-2xl"
+                size="small"
+                @change="(v: WatermarkPosition) => emit('composeOverlayPositionChange', v)"
+              >
+                <el-option
+                  v-for="opt in WATERMARK_POSITION_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </div>
+            <el-tooltip :show-after="400" content="0–1" placement="top">
+              <div class="opt-item">
+                <span class="label">透明度</span>
+                <el-input-number
+                  :max="1"
+                  :min="0"
+                  :model-value="composeOverlayOpacity"
+                  :precision="2"
+                  :step="0.1"
+                  class="w-lg"
+                  controls-position="right"
+                  size="small"
+                  @change="(v: number | undefined) => emit('composeOverlayOpacityChange', typeof v === 'number' ? v : 0.8)"
+                />
+              </div>
+            </el-tooltip>
+            <el-tooltip :show-after="400" content="相对视频短边宽度 %" placement="top">
+              <div class="opt-item">
+                <span class="label">缩放%</span>
+                <el-input-number
+                  :max="100"
+                  :min="1"
+                  :model-value="composeOverlayScalePercent"
+                  :step="1"
+                  class="w-lg"
+                  controls-position="right"
+                  size="small"
+                  @change="(v: number | undefined) => emit('composeOverlayScalePercentChange', typeof v === 'number' ? v : 15)"
+                />
+              </div>
+            </el-tooltip>
+            <div class="opt-item">
+              <span class="label">边距</span>
+              <el-input-number
+                :max="500"
+                :min="0"
+                :model-value="composeOverlayMargin"
+                :step="1"
+                class="w-lg"
+                controls-position="right"
+                size="small"
+                @change="(v: number | undefined) => emit('composeOverlayMarginChange', typeof v === 'number' ? v : 16)"
+              />
+            </div>
+            <el-tooltip :show-after="400" content="0 表示从开头" placement="top">
+              <div class="opt-item">
+                <span class="label">起秒</span>
+                <el-input-number
+                  :max="86400"
+                  :min="0"
+                  :model-value="composeOverlayStartSec"
+                  :precision="1"
+                  :step="0.5"
+                  class="w-lg"
+                  controls-position="right"
+                  size="small"
+                  @change="(v: number | undefined) => emit('composeOverlayStartSecChange', typeof v === 'number' ? v : 0)"
+                />
+              </div>
+            </el-tooltip>
+            <el-tooltip :show-after="400" content="0 表示到结尾" placement="top">
+              <div class="opt-item">
+                <span class="label">止秒</span>
+                <el-input-number
+                  :max="86400"
+                  :min="0"
+                  :model-value="composeOverlayEndSec"
+                  :precision="1"
+                  :step="0.5"
+                  class="w-lg"
+                  controls-position="right"
+                  size="small"
+                  @change="(v: number | undefined) => emit('composeOverlayEndSecChange', typeof v === 'number' ? v : 0)"
+                />
+              </div>
+            </el-tooltip>
+          </div>
+          <div class="opt-row opt-row-wrap">
+            <el-tooltip :content="encoderTitle(false, encoderInfo)" :show-after="400" placement="top">
+              <div class="opt-item">
+                <span class="label">编码器</span>
+                <el-select
+                  :model-value="encoder"
+                  class="w-4xl"
+                  size="small"
+                  @change="(v: EncoderId) => emit('encoderChange', v)"
+                >
+                  <el-option
+                    v-for="opt in ENCODER_OPTIONS"
+                    :key="opt.value"
+                    :disabled="!isEncoderOptionAvailable(opt.value)"
+                    :label="encoderOptionLabel(opt)"
+                    :value="opt.value"
+                  />
+                </el-select>
+                <span v-if="encoderChips.length" class="encoder-chips">
+                  <span
+                    v-for="c in encoderChips"
+                    :key="c.key"
+                    :class="{ ok: c.ok, bad: !c.ok }"
+                    class="encoder-chip"
+                  >
+                    {{ c.label }}{{ c.ok ? '✓' : '–' }}
+                  </span>
+                </span>
+              </div>
+            </el-tooltip>
+          </div>
+          <div class="opt-row opt-row-output">
+            <div class="opt-item opt-output">
+              <span class="label">输出目录</span>
+              <el-select
+                :model-value="outputDirMode"
+                class="w-2xl"
+                size="small"
+                @change="(v: OutputDirMode) => emit('outputDirModeChange', v)"
+              >
+                <el-option
+                  v-for="opt in OUTPUT_DIR_MODE_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <template v-if="outputDirMode !== 'sidecar'">
+                <el-button :icon="Folder" size="small" @click="emit('selectOutput')">
+                  选择目录
+                </el-button>
+                <el-tooltip :content="outputDir || '未选择输出目录'" :show-after="400" placement="top">
+                  <span class="path-text output-path">
+                    {{ outputDir || '未选择输出目录' }}
+                  </span>
+                </el-tooltip>
+              </template>
+              <span v-else class="hint-inline">与源文件同目录</span>
+            </div>
+            <div aria-hidden="true" class="opt-divider" />
+            <div class="opt-item opt-item-fill">
+              <span class="label">输出命名</span>
+              <el-select
+                :model-value="nameSelectValue(nameTemplate, nameTemplateCustom)"
+                class="w-4xl"
+                size="small"
+                @change="(v: string) => emit('nameTemplateChange', v)"
+              >
+                <el-option
+                  v-for="opt in NAME_TEMPLATE_OPTIONS"
+                  :key="opt.id"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <el-input
+                v-if="nameTemplateCustom || nameSelectValue(nameTemplate, nameTemplateCustom) === '__custom__'"
+                :model-value="nameTemplate === '__custom__' ? '' : nameTemplate"
+                :placeholder="nameTemplatePlaceholder"
+                class="w-4xl name-template-input"
+                size="small"
+                @update:model-value="(v: string) => emit('customNameTemplateInput', v)"
+              />
+            </div>
+          </div>
           <div class="opt-row">
             <el-tooltip :content="CONCURRENCY_HINT" placement="top" :show-after="400">
               <div class="opt-item">
@@ -1177,138 +1820,71 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                 </el-select>
               </div>
             </el-tooltip>
-
-            <div class="opt-divider" aria-hidden="true" />
-
-            <el-tooltip content="0 = 不裁剪 / 到结尾" placement="top" :show-after="400">
-              <div class="opt-item">
-                <span class="label">裁剪</span>
-                <span class="hint-inline hint-inline--tight">开始(秒)</span>
-                <el-input-number
-                  :model-value="trimStart"
-                  :min="0"
-                  :max="86400"
-                  :step="1"
-                  :precision="1"
-                  size="small"
-                  controls-position="right"
-                  class="w-lg"
-                  @change="(v: number | undefined) => emit('trimStartChange', typeof v === 'number' ? v : 0)"
-                />
-                <span class="hint-inline hint-inline--tight">结束(秒)</span>
-                <el-input-number
-                  :model-value="trimEnd"
-                  :min="0"
-                  :max="86400"
-                  :step="1"
-                  :precision="1"
-                  size="small"
-                  controls-position="right"
-                  class="w-lg"
-                  @change="(v: number | undefined) => emit('trimEndChange', typeof v === 'number' ? v : 0)"
-                />
-              </div>
-            </el-tooltip>
           </div>
         </template>
 
-        <template v-else-if="isVideoCompressMode || isVideoConcatMode || isMediaComposeMode">
+        <!-- compress 高级：CRF · 水印 · 时段 · 画面等 -->
+        <template v-else-if="isVideoCompressMode">
           <div class="opt-row">
-            <el-tooltip :content="encoderTitle(isWebm && isVideoCompressMode, encoderInfo)" placement="top" :show-after="400">
+            <el-tooltip :content="isWebm ? 'WebM 不适用' : 'Main@L4 利于旧设备/微信'" :show-after="400" placement="top">
               <div class="opt-item">
-                <span class="label">编码器</span>
+                <span class="label">兼容档</span>
                 <el-select
-                  :disabled="isWebm && isVideoCompressMode"
-                  :model-value="encoder"
-                  size="small"
+                  :disabled="isWebm"
+                  :model-value="compatProfile"
                   class="w-4xl"
-                  @change="(v: EncoderId) => emit('encoderChange', v)"
+                  size="small"
+                  @change="(v: CompatProfile) => emit('compatProfileChange', v)"
                 >
                   <el-option
-                    v-for="opt in ENCODER_OPTIONS"
+                    v-for="opt in COMPAT_PROFILE_OPTIONS"
                     :key="opt.value"
-                    :label="encoderOptionLabel(opt)"
+                    :label="opt.label"
                     :value="opt.value"
-                    :disabled="!isEncoderOptionAvailable(opt.value)"
                   />
                 </el-select>
-                <span v-if="encoderChips.length" class="encoder-chips">
-                  <span
-                    v-for="c in encoderChips"
-                    :key="c.key"
-                    class="encoder-chip"
-                    :class="{ ok: c.ok, bad: !c.ok }"
-                  >
-                    {{ c.label }}{{ c.ok ? '✓' : '–' }}
-                  </span>
-                </span>
               </div>
             </el-tooltip>
 
-            <template v-if="isVideoCompressMode">
-              <el-tooltip :content="isWebm ? 'WebM 不适用' : 'Main@L4 利于旧设备/微信'" placement="top" :show-after="400">
-                <div class="opt-item">
-                  <span class="label">兼容档</span>
-                  <el-select
-                    :disabled="isWebm"
-                    :model-value="compatProfile"
-                    size="small"
-                    class="w-4xl"
-                    @change="(v: CompatProfile) => emit('compatProfileChange', v)"
-                  >
-                    <el-option
-                      v-for="opt in COMPAT_PROFILE_OPTIONS"
-                      :key="opt.value"
-                      :label="opt.label"
-                      :value="opt.value"
-                    />
-                  </el-select>
-                </div>
-              </el-tooltip>
+            <el-tooltip :show-after="400" content="仅软件 x264/x265 生效；越慢越好" placement="top">
+              <div class="opt-item">
+                <span class="label">编码速度</span>
+                <el-select
+                  :model-value="encodePreset"
+                  class="w-2xl"
+                  size="small"
+                  @change="(v: EncodePreset) => emit('encodePresetChange', v)"
+                >
+                  <el-option
+                    v-for="opt in ENCODE_PRESET_OPTIONS"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+              </div>
+            </el-tooltip>
 
-              <div class="opt-divider" aria-hidden="true" />
-
-              <el-tooltip content="仅软件 x264/x265 生效；越慢越好" placement="top" :show-after="400">
-                <div class="opt-item">
-                  <span class="label">编码速度</span>
-                  <el-select
-                    :model-value="encodePreset"
-                    size="small"
-                    class="w-2xl"
-                    @change="(v: EncodePreset) => emit('encodePresetChange', v)"
-                  >
-                    <el-option
-                      v-for="opt in ENCODE_PRESET_OPTIONS"
-                      :key="opt.value"
-                      :label="opt.label"
-                      :value="opt.value"
-                    />
-                  </el-select>
-                </div>
-              </el-tooltip>
-
-              <el-tooltip :content="CONCURRENCY_HINT" placement="top" :show-after="400">
-                <div class="opt-item">
-                  <span class="label">并发数</span>
-                  <el-select
-                    :model-value="concurrency"
-                    size="small"
-                    class="w-xs"
-                    @change="(v: number) => emit('concurrencyChange', v)"
-                  >
-                    <el-option
-                      v-for="n in CONCURRENCY_OPTIONS"
-                      :key="n"
-                      :label="String(n)"
-                      :value="n"
-                    />
-                  </el-select>
-                </div>
-              </el-tooltip>
-            </template>
+            <el-tooltip :content="CONCURRENCY_HINT" :show-after="400" placement="top">
+              <div class="opt-item">
+                <span class="label">并发数</span>
+                <el-select
+                  :model-value="concurrency"
+                  class="w-xs"
+                  size="small"
+                  @change="(v: number) => emit('concurrencyChange', v)"
+                >
+                  <el-option
+                    v-for="n in CONCURRENCY_OPTIONS"
+                    :key="n"
+                    :label="String(n)"
+                    :value="n"
+                  />
+                </el-select>
+              </div>
+            </el-tooltip>
           </div>
 
-          <template v-if="isVideoCompressMode">
           <div class="opt-row">
             <el-tooltip content="90° 竖→横；180° 上下颠倒" placement="top" :show-after="400">
               <div class="opt-item">
@@ -1345,41 +1921,6 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                 />
               </el-select>
             </div>
-
-            <div class="opt-divider" aria-hidden="true" />
-
-            <div class="opt-item">
-              <span class="label">目标体积</span>
-              <el-input-number
-                :model-value="targetSizeMb"
-                :min="0"
-                :max="10240"
-                :step="1"
-                :precision="1"
-                size="small"
-                controls-position="right"
-                class="w-lg"
-                @change="(v: number | undefined) => emit('targetSizeMbChange', typeof v === 'number' ? v : 0)"
-              />
-              <span class="hint-inline hint-inline--tight">MB，0=不限制</span>
-            </div>
-
-            <el-tooltip
-              v-if="targetSizeMb > 0"
-              content="仅软件 x264/VP9；硬件自动单遍"
-              placement="top"
-              :show-after="400"
-            >
-              <div class="opt-item">
-                <span class="label">两遍编码</span>
-                <el-switch
-                  :model-value="twoPass"
-                  size="small"
-                  @change="(v: string | number | boolean) => emit('twoPassChange', Boolean(v))"
-                />
-                <span class="hint-inline hint-inline--tight">更准更慢</span>
-              </div>
-            </el-tooltip>
 
             <template v-if="isCustom">
               <div class="opt-divider" aria-hidden="true" />
@@ -1760,39 +2301,40 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                 @change="(v: number | undefined) => emit('cropHChange', typeof v === 'number' ? v : 0)"
               />
               <el-button size="small" type="primary" plain @click="openVisualCrop">
-                可视化裁切
+                图片裁切
               </el-button>
             </div>
           </div>
-          </template>
+
+          <div class="opt-row opt-row-wrap">
+            <div class="opt-item opt-item-fill">
+              <span class="label">输出命名</span>
+              <el-select
+                :model-value="nameSelectValue(nameTemplate, nameTemplateCustom)"
+                class="w-4xl"
+                size="small"
+                @change="(v: string) => emit('nameTemplateChange', v)"
+              >
+                <el-option
+                  v-for="opt in NAME_TEMPLATE_OPTIONS"
+                  :key="opt.id"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <el-input
+                v-if="nameTemplateCustom || nameSelectValue(nameTemplate, nameTemplateCustom) === '__custom__'"
+                :model-value="nameTemplate === '__custom__' ? '' : nameTemplate"
+                :placeholder="nameTemplatePlaceholder"
+                class="w-4xl name-template-input"
+                size="small"
+                @update:model-value="(v: string) => emit('customNameTemplateInput', v)"
+              />
+            </div>
+          </div>
         </template>
       </div>
-    </div>
-
-    <!-- 图片 / 拼接 / 混剪：仅并发（打码为单任务，不展示并发） -->
-    <div
-      v-if="isImageMode || isVideoConcatMode || isMediaComposeMode"
-      class="opt-row"
-    >
-      <el-tooltip :content="CONCURRENCY_HINT" placement="top" :show-after="400">
-        <div class="opt-item">
-          <span class="label">并发数</span>
-          <el-select
-            :model-value="concurrency"
-            size="small"
-            class="w-xs"
-            @change="(v: number) => emit('concurrencyChange', v)"
-          >
-            <el-option
-              v-for="n in CONCURRENCY_OPTIONS"
-              :key="n"
-              :label="String(n)"
-              :value="n"
-            />
-          </el-select>
-        </div>
-      </el-tooltip>
-    </div>
+    </el-drawer>
 
     <ImageCropDialog
       v-model="cropDialogOpen"
@@ -1823,6 +2365,13 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 .crop-compose-alert,
 .compose-empty-alert {
   margin-bottom: 10px;
+}
+
+.compose-summary {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--app-fg-muted);
+  line-height: 1.45;
 }
 
 .encoder-chips {
@@ -1860,20 +2409,33 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
   flex: 1;
 }
 
+.options-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.options-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .options-title {
   font-size: var(--fs-lg);
   font-weight: 600;
   color: var(--app-fg);
   white-space: nowrap;
-  /* 与可换行描述顶部对齐 */
   line-height: 1.4;
-  padding-top: 1px;
 }
 
 .options-desc {
   font-size: var(--fs-sm);
   color: var(--app-fg-muted);
-  /* 窄屏完整显示，允许换行 */
   white-space: normal;
   line-height: 1.4;
   min-width: 0;
@@ -1909,17 +2471,40 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
   background: color-mix(in srgb, var(--panel-border) 90%, transparent);
 }
 
+.opt-common {
+  min-width: 0;
+}
+
 .opt-item {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex-wrap: nowrap;
-  min-height: 28px;
+  min-height: 32px;
   min-width: 0;
+}
+
+.opt-item :deep(.label),
+.opt-item > .label {
+  color: var(--app-fg-muted);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  min-width: 4em;
+  flex-shrink: 0;
 }
 
 .opt-item-fill {
   flex: 1 1 auto;
+}
+
+.opt-entry {
+  flex: 0 0 auto;
+}
+
+.opt-hint-block {
+  flex: 1 1 100%;
+  margin: 0;
 }
 
 .opt-output {
@@ -1981,7 +2566,6 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
   font-size: var(--fs-sm);
   color: var(--app-fg-muted);
   transition: transform 0.15s ease;
-  transform: rotate(0deg);
 }
 
 .opt-advanced-chevron.open {
@@ -1989,12 +2573,31 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 }
 
 .opt-advanced-body {
-  padding: 10px 0 2px;
+  padding: 4px 0 8px;
 }
 
 .opt-advanced-body .opt-row + .opt-row {
   margin-top: 14px;
   padding-top: 12px;
+  box-shadow: inset 0 1px 0 0 color-mix(in srgb, var(--panel-border) 70%, transparent);
+}
+
+.adv-drawer-head {
+  min-width: 0;
+}
+
+.adv-drawer-title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--app-fg);
+  line-height: 1.3;
+}
+
+.adv-drawer-sub {
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  color: var(--app-fg-muted);
+  line-height: 1.4;
 }
 
 .name-template-input {

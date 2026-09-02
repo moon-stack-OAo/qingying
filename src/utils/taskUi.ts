@@ -1,9 +1,4 @@
-import {
-  type CompressTask,
-  formatSaveRatio,
-  type TaskMode,
-  type TaskStatus
-} from '@shared/types'
+import {type CompressTask, formatSaveRatio, type TaskMode, type TaskStatus} from '@shared/types'
 
 /** 任务状态中文标签 */
 export function statusLabel(s: TaskStatus): string {
@@ -26,6 +21,16 @@ export function statusType(s: TaskStatus): '' | 'success' | 'warning' | 'info' |
   if (s === 'queued') return 'info'
   if (s === 'cancelled') return 'info'
   return ''
+}
+
+/** 状态 pill 语义 class：ok / warn / danger / accent / muted */
+export function statusPillClass(s: TaskStatus): string {
+  if (s === 'completed') return 'pill-ok'
+  if (s === 'failed') return 'pill-danger'
+  if (s === 'running') return 'pill-accent'
+  if (s === 'queued') return 'pill-warn'
+  if (s === 'cancelled') return 'pill-muted'
+  return 'pill-muted'
 }
 
 /** 任务模式中文标签 */

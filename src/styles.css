@@ -2,35 +2,70 @@
   box-sizing: border-box;
 }
 
-:root {
-  --app-bg: #f3f5f9;
-  --app-fg: #303133;
-  --app-fg-secondary: #606266;
-  --app-fg-muted: #909399;
-  --app-fg-hint: #909399;
-  --panel-bg: #fff;
-  --panel-border: rgba(15, 23, 42, 0.1);
-  --panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.05);
+:root,
+[data-theme='light'] {
+  /* 设计系统语义色（qingying） */
+  --bg: oklch(97.5% 0.006 250);
+  --surface: oklch(100% 0 0);
+  --surface-2: oklch(95.5% 0.008 250);
+  --fg: oklch(22% 0.02 250);
+  --muted: oklch(48% 0.02 250);
+  --border: oklch(88% 0.012 250);
+  --accent: oklch(55% 0.14 165);
+  --accent-fg: oklch(99% 0.01 165);
+  --ok: oklch(55% 0.13 150);
+  --warn: oklch(68% 0.14 75);
+  --danger: oklch(55% 0.18 25);
+  --info: oklch(55% 0.1 230);
+  --accent-soft: color-mix(in oklch, var(--accent) 14%, transparent);
+  --ok-soft: color-mix(in oklch, var(--ok) 14%, transparent);
+  --warn-soft: color-mix(in oklch, var(--warn) 16%, transparent);
+  --danger-soft: color-mix(in oklch, var(--danger) 14%, transparent);
+  --fg-soft: color-mix(in oklch, var(--fg) 5%, transparent);
+  --shadow: 0 8px 24px color-mix(in oklch, var(--fg) 8%, transparent);
+  --font-display: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-body: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Consolas, ui-monospace, monospace;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 10px;
+  --gap-xs: 4px;
+  --gap-sm: 8px;
+  --gap-md: 12px;
+  --gap-lg: 16px;
+  --gap-xl: 24px;
+  --titlebar-h: 40px;
+  --row-h: 40px;
+
+  /* 既有组件变量 → 映射到设计 token */
+  --app-bg: var(--bg);
+  --app-fg: var(--fg);
+  --app-fg-secondary: var(--muted);
+  --app-fg-muted: var(--muted);
+  --app-fg-hint: var(--muted);
+  --panel-bg: var(--surface);
+  --panel-border: var(--border);
+  --panel-shadow: var(--shadow);
   /* 自定义描边（box-shadow 模拟，非原生 border） */
-  --ring: 0 0 0 1px var(--panel-border), 0 0 0 3px color-mix(in srgb, var(--panel-border) 28%, transparent);
-  --ring-soft: 0 0 0 1px color-mix(in srgb, var(--panel-border) 75%, transparent);
-  --border-dashed: #c0c4cc;
-  --drop-hover-bg: #f0f9ff;
-  --drop-active-bg: #ecf5ff;
-  --page-dragging-bg: #f0f9ff;
-  --status-ok: #67c23a;
-  --status-bad: #f56c6c;
-  --status-warn: #e6a23c;
-  --notes-bg: #f5f7fa;
-  --primary: #409eff;
+  --ring: 0 0 0 1px var(--panel-border), 0 0 0 3px color-mix(in oklch, var(--panel-border) 28%, transparent);
+  --ring-soft: 0 0 0 1px color-mix(in oklch, var(--panel-border) 75%, transparent);
+  --border-dashed: color-mix(in oklch, var(--border) 70%, var(--muted));
+  --drop-hover-bg: color-mix(in oklch, var(--accent) 8%, var(--bg));
+  --drop-active-bg: color-mix(in oklch, var(--accent) 12%, var(--bg));
+  --page-dragging-bg: color-mix(in oklch, var(--accent) 8%, var(--bg));
+  --status-ok: var(--ok);
+  --status-bad: var(--danger);
+  --status-warn: var(--warn);
+  --notes-bg: var(--surface-2);
+  --primary: var(--accent);
   --link-color: var(--primary);
   --drop-active-color: var(--primary);
-  --radius-md: 10px;
-  --radius-xs: 6px;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
+  --radius-md: var(--radius-lg);
+  --radius-xs: var(--radius-sm);
+  --space-1: var(--gap-xs);
+  --space-2: var(--gap-sm);
+  --space-3: var(--gap-md);
+  --space-4: var(--gap-lg);
   --space-5: 20px;
   --space-page: 14px;
   --space-gap: var(--space-3);
@@ -42,31 +77,76 @@
   --overlay-subtle: 4%;
   --overlay-soft: 6%;
   --overlay-focus: 18%;
+
+  /* Element Plus 主色 → 青绿 accent */
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: color-mix(in oklch, var(--accent) 70%, white);
+  --el-color-primary-light-5: color-mix(in oklch, var(--accent) 50%, white);
+  --el-color-primary-light-7: color-mix(in oklch, var(--accent) 30%, white);
+  --el-color-primary-light-8: color-mix(in oklch, var(--accent) 20%, white);
+  --el-color-primary-light-9: color-mix(in oklch, var(--accent) 10%, white);
+  --el-color-primary-dark-2: color-mix(in oklch, var(--accent) 80%, black);
+  --el-color-success: var(--ok);
+  --el-color-warning: var(--warn);
+  --el-color-danger: var(--danger);
+  --el-color-info: var(--info);
   color-scheme: light;
 }
 
-html.dark {
-  --app-bg: #0f1115;
-  --app-fg: #e5eaf3;
-  --app-fg-secondary: #c0c4cc;
-  --app-fg-muted: #a3a6ad;
-  --app-fg-hint: #8b8f97;
-  --panel-bg: #1a1d24;
-  --panel-border: rgba(255, 255, 255, 0.12);
-  --panel-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 8px 20px rgba(0, 0, 0, 0.28);
-  --ring: 0 0 0 1px var(--panel-border), 0 0 0 3px color-mix(in srgb, var(--panel-border) 35%, transparent);
-  --ring-soft: 0 0 0 1px color-mix(in srgb, var(--panel-border) 75%, transparent);
-  --border-dashed: #4c4f56;
-  --drop-hover-bg: #1a2332;
-  --drop-active-bg: #1c2a3d;
-  --page-dragging-bg: #141a24;
-  --status-ok: #85ce61;
-  --status-bad: #f78989;
-  --status-warn: #eebe77;
-  --notes-bg: #141820;
-  --primary: #79bbff;
+html.dark,
+[data-theme='dark'] {
+  --bg: oklch(18% 0.015 250);
+  --surface: oklch(22% 0.016 250);
+  --surface-2: oklch(26% 0.018 250);
+  --fg: oklch(94% 0.01 250);
+  --muted: oklch(68% 0.02 250);
+  --border: oklch(32% 0.018 250);
+  --accent: oklch(68% 0.13 165);
+  --accent-fg: oklch(16% 0.02 165);
+  --ok: oklch(72% 0.12 150);
+  --warn: oklch(78% 0.12 75);
+  --danger: oklch(70% 0.16 25);
+  --info: oklch(72% 0.09 230);
+  --accent-soft: color-mix(in oklch, var(--accent) 18%, transparent);
+  --ok-soft: color-mix(in oklch, var(--ok) 18%, transparent);
+  --warn-soft: color-mix(in oklch, var(--warn) 18%, transparent);
+  --danger-soft: color-mix(in oklch, var(--danger) 18%, transparent);
+  --fg-soft: color-mix(in oklch, var(--fg) 6%, transparent);
+  --shadow: 0 10px 28px color-mix(in oklch, black 45%, transparent);
+
+  --app-bg: var(--bg);
+  --app-fg: var(--fg);
+  --app-fg-secondary: var(--muted);
+  --app-fg-muted: var(--muted);
+  --app-fg-hint: var(--muted);
+  --panel-bg: var(--surface);
+  --panel-border: var(--border);
+  --panel-shadow: var(--shadow);
+  --ring: 0 0 0 1px var(--panel-border), 0 0 0 3px color-mix(in oklch, var(--panel-border) 35%, transparent);
+  --ring-soft: 0 0 0 1px color-mix(in oklch, var(--panel-border) 75%, transparent);
+  --border-dashed: color-mix(in oklch, var(--border) 65%, var(--muted));
+  --drop-hover-bg: color-mix(in oklch, var(--accent) 10%, var(--surface));
+  --drop-active-bg: color-mix(in oklch, var(--accent) 14%, var(--surface));
+  --page-dragging-bg: color-mix(in oklch, var(--accent) 8%, var(--bg));
+  --status-ok: var(--ok);
+  --status-bad: var(--danger);
+  --status-warn: var(--warn);
+  --notes-bg: var(--surface-2);
+  --primary: var(--accent);
   --link-color: var(--primary);
   --drop-active-color: var(--primary);
+
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: color-mix(in oklch, var(--accent) 70%, black);
+  --el-color-primary-light-5: color-mix(in oklch, var(--accent) 50%, black);
+  --el-color-primary-light-7: color-mix(in oklch, var(--accent) 30%, black);
+  --el-color-primary-light-8: color-mix(in oklch, var(--accent) 20%, black);
+  --el-color-primary-light-9: color-mix(in oklch, var(--accent) 10%, black);
+  --el-color-primary-dark-2: color-mix(in oklch, var(--accent) 85%, white);
+  --el-color-success: var(--ok);
+  --el-color-warning: var(--warn);
+  --el-color-danger: var(--danger);
+  --el-color-info: var(--info);
   color-scheme: dark;
 }
 
@@ -76,13 +156,7 @@ body,
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family:
-    'Segoe UI',
-    'PingFang SC',
-    'Microsoft YaHei',
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-body);
   font-size: var(--fs-md);
   background: var(--app-bg);
   color: var(--app-fg);
@@ -204,16 +278,11 @@ body,
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 0 var(--space-page) var(--space-page);
-  gap: var(--space-gap);
+  padding: 0;
+  gap: 0;
   background: var(--app-bg);
   color: var(--app-fg);
   overflow: hidden;
-}
-
-/* 自定义标题栏贴顶，下方内容再留间距 */
-.page > .title-bar {
-  margin: 0 calc(-1 * var(--space-page)) 0;
 }
 
 .page.page-dragging {
@@ -222,12 +291,45 @@ body,
   background: var(--page-dragging-bg);
 }
 
-.workspace {
-  flex: 1;
+.shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
   min-height: 0;
+  flex: 1;
+}
+
+.shell-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  padding: var(--space-page);
+  gap: var(--space-gap);
+  overflow: hidden;
+  background: var(--app-bg);
+}
+
+/* 常用参数留在主区；高级进抽屉后主区高度稳定，仅作兜底滚动 */
+.shell-main > .options-panel.panel {
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: min(42vh, calc(100% - 240px));
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.workspace {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: var(--space-gap);
+}
+
+.workspace > .drop-zone,
+.workspace > .summary-bar {
+  flex-shrink: 0;
 }
 
 .drop-zone {
@@ -410,6 +512,7 @@ body,
 .options-panel.panel {
   padding-top: 12px;
   padding-bottom: 12px;
+  scrollbar-gutter: stable;
 }
 
 .task-table {
@@ -496,6 +599,8 @@ body,
 .size-text {
   font-size: var(--fs-sm);
   color: var(--app-fg-secondary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .save-good {
@@ -544,7 +649,7 @@ body,
 /* 细滚动条（设置抽屉、更新说明、帮助等） */
 .thin-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, #0ea5e9 42%, var(--app-fg-muted)) transparent;
+  scrollbar-color: color-mix(in oklch, var(--accent) 42%, var(--app-fg-muted)) transparent;
 }
 
 .thin-scrollbar::-webkit-scrollbar {
@@ -554,24 +659,19 @@ body,
 
 .thin-scrollbar::-webkit-scrollbar-track {
   margin: 6px 0;
-  background: color-mix(in srgb, var(--app-fg) 4%, transparent);
+  background: color-mix(in oklch, var(--app-fg) 4%, transparent);
   border-radius: 999px;
 }
 
 .thin-scrollbar::-webkit-scrollbar-thumb {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, #1b4dff 55%, transparent),
-    color-mix(in srgb, #0ea5e9 65%, transparent),
-    color-mix(in srgb, #14b8a6 55%, transparent)
-  );
+  background: color-mix(in oklch, var(--accent) 55%, transparent);
   border-radius: 999px;
   border: 0 solid transparent;
   background-clip: padding-box;
 }
 
 .thin-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #1b4dff, #0ea5e9, #14b8a6);
+  background: var(--accent);
 }
 
 .thin-scrollbar::-webkit-scrollbar-corner {
@@ -583,12 +683,13 @@ body,
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-top: 8px;
+  padding: 12px 16px 16px;
+  min-height: 0;
 }
 
 .settings-drawer .settings-tabs .el-tabs__content {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--app-fg-muted) 55%, transparent) transparent;
+  scrollbar-color: color-mix(in oklch, var(--app-fg-muted) 55%, transparent) transparent;
 }
 
 .settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar {
@@ -598,22 +699,17 @@ body,
 
 .settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar-track {
   margin: 6px 0;
-  background: color-mix(in srgb, var(--app-fg) 4%, transparent);
+  background: color-mix(in oklch, var(--app-fg) 4%, transparent);
   border-radius: 999px;
 }
 
 .settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar-thumb {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, #1b4dff 55%, transparent),
-    color-mix(in srgb, #0ea5e9 65%, transparent),
-    color-mix(in srgb, #14b8a6 55%, transparent)
-  );
+  background: color-mix(in oklch, var(--accent) 55%, transparent);
   border-radius: 999px;
 }
 
 .settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #1b4dff, #0ea5e9, #14b8a6);
+  background: var(--accent);
 }
 
 .settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar-corner {
@@ -625,14 +721,16 @@ body,
 /* 自定义浮层描边：去掉 Element 默认边框，改用 ring + 阴影 */
 .el-dialog,
 .el-drawer {
-  border: none !important;
-  box-shadow: var(--ring), 0 12px 40px rgba(15, 23, 42, 0.12), 0 4px 12px rgba(15, 23, 42, 0.06) !important;
+  border: 1px solid var(--panel-border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow), 0 12px 40px color-mix(in oklch, var(--fg) 10%, transparent) !important;
   background: var(--panel-bg) !important;
+  overflow: hidden;
 }
 
 html.dark .el-dialog,
 html.dark .el-drawer {
-  box-shadow: var(--ring), 0 16px 48px rgba(0, 0, 0, 0.45), 0 4px 14px rgba(0, 0, 0, 0.28) !important;
+  box-shadow: var(--shadow), 0 16px 48px color-mix(in oklch, black 45%, transparent) !important;
 }
 
 .el-dialog__header,
@@ -640,21 +738,28 @@ html.dark .el-drawer {
   margin-right: 0;
   border-bottom: none;
   box-shadow: inset 0 -1px 0 0 var(--panel-border);
-  padding-bottom: 14px;
+  padding: 12px 16px;
   margin-bottom: 0;
   color: var(--app-fg);
+}
+
+.el-dialog__body {
+  padding: 16px;
 }
 
 .el-dialog__footer {
   border-top: none;
   box-shadow: inset 0 1px 0 0 var(--panel-border);
-  padding-top: 14px;
+  padding: 12px 16px;
+  background: var(--surface-2, var(--notes-bg));
 }
 
 .el-dialog__title,
 .el-drawer__title {
   color: var(--app-fg);
   font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.01em;
 }
 
 .el-overlay-dialog .el-dialog,
@@ -669,24 +774,40 @@ html.dark .el-drawer {
   font-size: var(--fs-sm);
 }
 
-/* 任务表在工作区内吃满剩余高度 */
+/* 任务表吃满剩余高度；basis 必须为 0，否则按行数撑破视口 */
 .workspace .task-table.panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  overflow: hidden;
 }
 
-/* 任务表格：保留 Element Plus 默认表格线，仅做主题色微调 */
+/* 任务表格：主题色微调；行底用实色，避免 sticky 操作列透出下层文字 */
 .task-table .el-table {
   --el-table-border-color: var(--panel-border);
-  --el-table-header-bg-color: color-mix(in srgb, var(--app-fg) 3%, var(--panel-bg));
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-row-hover-bg-color: color-mix(in srgb, var(--app-fg) 4%, var(--panel-bg));
-  background: transparent;
+  --el-table-header-bg-color: color-mix(in oklch, var(--fg) 3%, var(--panel-bg));
+  --el-table-bg-color: var(--panel-bg);
+  --el-table-tr-bg-color: var(--panel-bg);
+  --el-table-row-hover-bg-color: color-mix(in oklch, var(--fg) 4%, var(--panel-bg));
+  --el-table-fixed-right-column: none;
+  --el-table-fixed-left-column: none;
+  background: var(--panel-bg);
   border-radius: var(--radius-xs);
   overflow: hidden;
+}
+
+.task-table .el-table .el-table-fixed-column--right {
+  z-index: 3 !important;
+}
+
+.task-table .el-table .el-table__cell {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.task-table .el-table__body .el-table__row {
+  height: var(--row-h, 40px);
 }
 
 /* 表格空态更轻 */
@@ -698,4 +819,21 @@ html.dark .el-drawer {
 .el-message {
   z-index: 5000 !important;
   top: 48px !important;
+}
+
+/* 高级参数抽屉（append-to-body，样式挂全局） */
+.el-drawer.opt-advanced-drawer {
+  background: var(--panel-bg);
+  color: var(--app-fg);
+}
+
+.el-drawer.opt-advanced-drawer .el-drawer__header {
+  margin-bottom: 0;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.el-drawer.opt-advanced-drawer .el-drawer__body {
+  padding: 12px 16px 20px;
+  overflow: auto;
 }

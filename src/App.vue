@@ -12,13 +12,12 @@ import type {
   TaskMode,
   WatermarkPosition
 } from '@shared/types'
-import {IMAGE_EXTENSIONS} from '@shared/types'
+import {IMAGE_EXTENSIONS, TASK_MODE_OPTIONS} from '@shared/types'
 import TitleBar from './components/TitleBar.vue'
+import ModeSidebar from './components/ModeSidebar.vue'
 import CompressOptionsPanel from './components/CompressOptionsPanel.vue'
 import VideoMosaicDialog from './components/VideoMosaicDialog.vue'
-import StitchOrderDialog, {
-  type StitchOrderConfirmPayload
-} from './components/StitchOrderDialog.vue'
+import StitchOrderDialog, {type StitchOrderConfirmPayload} from './components/StitchOrderDialog.vue'
 import DropZone from './components/DropZone.vue'
 import CloseConfirmDialog from './components/CloseConfirmDialog.vue'
 import SettingsDrawer from './components/SettingsDrawer.vue'
@@ -460,7 +459,7 @@ function openMosaicEditor(): void {
   if (!mosaicEditable.value) {
     ElMessage.warning(
       mosaicTask.value
-        ? '处理进行中，请先取消后再编辑打码区域'
+        ? '处理进行中，请先取消后再编辑区域'
         : '请先添加视频'
     )
     return
@@ -623,14 +622,66 @@ async function onSelectComposeOverlayImageUi(): Promise<void> {
   afterCropComposeEdit()
 }
 
-/** 模式切换守卫：不匹配的 pending/failed 需确认移除；打码模式仅保留单个任务 */
+function taskModeLabel(mode: TaskMode): string {
+  return TASK_MODE_OPTIONS.find((o) => o.value === mode)?.label || mode
+}
+
+function queueMediaKindLabel(mode: TaskMode): string {
+  if (
+    mode === 'image' ||
+    mode === 'image-crop' ||
+    mode === 'image-stitch'
+  ) {
+    return '图片文件'
+  }
+  return '视频文件'
+}
+
+/** 模式切换守卫：进行中拦截、类型不符、兼容确认、打码单任务 */
 async function handleTaskModeChange(mode: TaskMode): Promise<void> {
   if (mode === taskMode.value) return
-  const n = getMismatchedPendingCount(mode)
-  if (n > 0) {
+
+  if (hasActive.value) {
+    ElMessage.warning('仍有任务处理中，请等待完成或取消后再切换模式。')
+    return
+  }
+
+  const fromMode = taskMode.value
+  const toLabel = taskModeLabel(mode)
+  const pendingOrFailed = tasks.value.filter(
+    (t) => t.status === 'pending' || t.status === 'failed'
+  )
+
+  // 离开打码且仍有未导出区域
+  if (
+    fromMode === 'video-mosaic' &&
+    mode !== 'video-mosaic' &&
+    mosaicRegionCount.value > 0 &&
+    mosaicTask.value &&
+    (mosaicTask.value.status === 'pending' ||
+      mosaicTask.value.status === 'failed')
+  ) {
     try {
       await ElMessageBox.confirm(
-        `有 ${n} 个待处理任务与新模式文件类型不符，是否移除这些任务？`,
+        '打码区域尚未导出，离开将丢弃当前编辑。',
+        '离开打码工作台',
+        {
+          type: 'warning',
+          confirmButtonText: '离开并丢弃',
+          cancelButtonText: '取消',
+          confirmButtonClass: 'el-button--danger is-plain'
+        }
+      )
+    } catch {
+      return
+    }
+  }
+
+  const mismatched = getMismatchedPendingCount(mode)
+  if (mismatched > 0) {
+    try {
+      await ElMessageBox.confirm(
+        `当前队列为${queueMediaKindLabel(fromMode)}，无法在「${toLabel}」中处理。是否移除不符项后继续？`,
         '切换任务模式',
         {
           type: 'warning',
@@ -642,41 +693,56 @@ async function handleTaskModeChange(mode: TaskMode): Promise<void> {
       return
     }
     removeMismatchedPending(mode)
-  }
-  if (mode === 'video-mosaic') {
-    if (hasActive.value) {
-      ElMessage.warning('请先取消进行中的任务再切换到打码模式')
+  } else if (pendingOrFailed.length > 0 && mode !== 'video-mosaic') {
+    // 类型兼容：保留任务，参数绑定随模式重置
+    try {
+      await ElMessageBox.confirm(
+        '切换后将清空当前队列参数绑定，任务保留为待处理。继续？',
+        '切换任务模式',
+        {
+          type: 'info',
+          confirmButtonText: '继续切换',
+          cancelButtonText: '取消'
+        }
+      )
+    } catch {
       return
     }
+  }
+
+  if (mode === 'video-mosaic') {
     const keep = tasks.value.filter(
       (t) => t.status === 'pending' || t.status === 'failed'
     )
     if (keep.length > 1) {
       try {
         await ElMessageBox.confirm(
-          '打码模式仅支持单个视频，切换后将只保留第一个待处理任务，其余任务将被移除。是否继续？',
+          '打码为单任务工作台，将只带入选中的 1 个文件。是否继续？',
           '切换任务模式',
           {
             type: 'warning',
-            confirmButtonText: '保留第一个并切换',
+            confirmButtonText: '只带入 1 个并切换',
             cancelButtonText: '取消'
           }
         )
       } catch {
         return
       }
-      tasks.value = [keep[0]]
-      selectedTaskId.value = keep[0].id
+      const preferred =
+        (selectedTaskId.value &&
+          keep.find((t) => t.id === selectedTaskId.value)) ||
+        keep[0]
+      tasks.value = [preferred]
+      selectedTaskId.value = preferred.id
     } else if (keep.length === 1) {
-      // 单页流程：去掉已完成等残留，只留唯一待处理视频
       tasks.value = [keep[0]]
       selectedTaskId.value = keep[0].id
     } else {
-      // 无待处理：进入空白打码工作区
       tasks.value = []
       selectedTaskId.value = null
     }
   }
+
   onTaskModeChange(mode)
 }
 
@@ -708,6 +774,7 @@ const {
 })
 
 const {
+  isDark,
   start: startTheme,
   stop: stopTheme,
   toggleLightDark
@@ -1086,6 +1153,8 @@ async function onResetSettings(): Promise<void> {
     <TitleBar
         :app-version="appVersion"
         :ffmpeg-status="ffmpegStatus"
+        :is-dark="isDark"
+        :theme="theme"
         :update-available="
           updateInfo.state === 'available' || updateInfo.state === 'downloading'
         "
@@ -1096,6 +1165,7 @@ async function onResetSettings(): Promise<void> {
         @open-settings="settingsVisible = true"
         @show-shortcuts="shortcutHelpVisible = true"
         @open-update="updateDialogVisible = true"
+        @toggle-theme="toggleLightDark"
     />
 
     <SettingsDrawer
@@ -1163,217 +1233,228 @@ async function onResetSettings(): Promise<void> {
         @decide="onCloseDecide"
     />
 
-    <CompressOptionsPanel
-        :audio-bitrate="audioBitrate"
-        :audio-format="audioFormat"
-        :concurrency="concurrency"
-        :custom="custom"
-        :encoder="encoder"
-        :encoder-info="encoderInfo"
-        :is-audio-mode="isAudioMode"
-        :is-image-mode="isImageMode"
-        :is-video-concat-mode="isVideoConcatMode"
-        :is-media-compose-mode="isMediaComposeMode"
-        :is-video-mosaic-mode="isVideoMosaicMode"
-        :is-video-compress-mode="isVideoCompressMode"
-        :is-custom="isCustom"
-        :is-webm="isWebm"
-        :name-template="nameTemplate"
-        :name-template-custom="nameTemplateCustom"
-        :output-dir="outputDir"
-        :output-dir-mode="outputDirMode"
-        :preset-description="currentPreset.description"
-        :preset-id="presetId"
-        :target-size-mb="targetSizeMb"
-        :task-mode="taskMode"
-        :compat-profile="compatProfile"
-        :encode-preset="encodePreset"
-        :fps="fps"
-        :mute-audio="muteAudio"
-        :rotate90="rotate90"
-        :trim-end="trimEnd"
-        :trim-start="trimStart"
-        :two-pass="twoPass"
-        :video-audio-bitrate="videoAudioBitrate"
-        :watermark-mode="watermarkMode"
-        :watermark-image-path="watermarkImagePath"
-        :watermark-text="watermarkText"
-        :watermark-position="watermarkPosition"
-        :watermark-opacity="watermarkOpacity"
-        :watermark-scale-percent="watermarkScalePercent"
-        :watermark-font-size="watermarkFontSize"
-        :watermark-margin="watermarkMargin"
-        :image-format="imageFormat"
-        :image-quality="imageQuality"
-        :image-max-edge="imageMaxEdge"
-        :image-strip="imageStrip"
-        :image-layout="imageLayout"
-        :image-grid-cols="imageGridCols"
-        :image-gap="imageGap"
-        :image-background="imageBackground"
-        :crop-x="cropX"
-        :crop-y="cropY"
-        :crop-w="cropW"
-        :crop-h="cropH"
-        :crop-preview-path="cropPreviewPath"
-        :concat-prefer-copy="concatPreferCopy"
-        :mosaic-frame-by-frame="mosaicFrameByFrame"
-        :compose-intro-path="composeIntroPath"
-        :compose-intro-duration="composeIntroDuration"
-        :compose-outro-path="composeOutroPath"
-        :compose-outro-duration="composeOutroDuration"
-        :compose-overlay-path="composeOverlayPath"
-        :compose-overlay-position="composeOverlayPosition"
-        :compose-overlay-opacity="composeOverlayOpacity"
-        :compose-overlay-scale-percent="composeOverlayScalePercent"
-        :compose-overlay-margin="composeOverlayMargin"
-        :compose-overlay-start-sec="composeOverlayStartSec"
-        :compose-overlay-end-sec="composeOverlayEndSec"
-        :compose-fit-intro-outro="composeFitIntroOutro"
-        :scale-mode="scaleMode"
-        :out-width="outWidth"
-        :out-height="outHeight"
-        :aspect-ratio="aspectRatio"
-        :scale-pad="scalePad"
-        :show-crop-compose-warning="showCropComposeGlobalWarning"
-        :crop-compose-warning-text="cropComposeWarningText"
-        @apply-to-pending="applyOptionsToPending"
-        @audio-bitrate-change="onAudioBitrateChange"
-        @audio-format-change="onAudioFormatChange"
-        @compat-profile-change="onCompatProfileChange"
-        @concurrency-change="onConcurrencyChange"
-        @custom-name-template-input="onCustomNameTemplateInput"
-        @encode-preset-change="onEncodePresetChange"
-        @encoder-change="onEncoderChange"
-        @fps-change="onFpsChange"
-        @mute-audio-change="onMuteAudioChange"
-        @name-template-change="onNameTemplateChange"
-        @output-dir-mode-change="onOutputDirModeChange"
-        @preset-change="onPresetChange"
-        @rotate90-change="onRotate90Change"
-        @select-output="onSelectOutput"
-        @select-watermark-image="onSelectWatermarkImage"
-        @target-size-mb-change="onTargetSizeMbChange"
-        @task-mode-change="handleTaskModeChange"
-        @trim-end-change="onTrimEndChange"
-        @trim-start-change="onTrimStartChange"
-        @two-pass-change="onTwoPassChange"
-        @video-audio-bitrate-change="onVideoAudioBitrateChange"
-        @watermark-mode-change="onWatermarkModeChange"
-        @watermark-image-path-change="onWatermarkImagePathChange"
-        @watermark-text-change="onWatermarkTextChange"
-        @watermark-position-change="onWatermarkPositionChange"
-        @watermark-opacity-change="onWatermarkOpacityChange"
-        @watermark-scale-percent-change="onWatermarkScalePercentChange"
-        @watermark-font-size-change="onWatermarkFontSizeChange"
-        @watermark-margin-change="onWatermarkMarginChange"
-        @image-format-change="onImageFormatChange"
-        @image-quality-change="onImageQualityChange"
-        @image-max-edge-change="onImageMaxEdgeChange"
-        @image-strip-change="onImageStripChange"
-        @image-layout-change="onImageLayoutChange"
-        @image-grid-cols-change="onImageGridColsChange"
-        @image-gap-change="onImageGapChange"
-        @image-background-change="onImageBackgroundChange"
-        @crop-x-change="onCropXChangeUi"
-        @crop-y-change="onCropYChangeUi"
-        @crop-w-change="onCropWChangeUi"
-        @crop-h-change="onCropHChangeUi"
-        @concat-prefer-copy-change="onConcatPreferCopyChange"
-        @mosaic-frame-by-frame-change="onMosaicFrameByFrameChange"
-        @compose-intro-path-change="onComposeIntroPathChangeUi"
-        @compose-intro-duration-change="onComposeIntroDurationChangeUi"
-        @compose-outro-path-change="onComposeOutroPathChangeUi"
-        @compose-outro-duration-change="onComposeOutroDurationChangeUi"
-        @compose-overlay-path-change="onComposeOverlayPathChangeUi"
-        @compose-overlay-position-change="onComposeOverlayPositionChangeUi"
-        @compose-overlay-opacity-change="onComposeOverlayOpacityChangeUi"
-        @compose-overlay-scale-percent-change="onComposeOverlayScalePercentChangeUi"
-        @compose-overlay-margin-change="onComposeOverlayMarginChangeUi"
-        @compose-overlay-start-sec-change="onComposeOverlayStartSecChangeUi"
-        @compose-overlay-end-sec-change="onComposeOverlayEndSecChangeUi"
-        @compose-fit-intro-outro-change="onComposeFitIntroOutroChangeUi"
-        @select-compose-intro-image="onSelectComposeIntroImageUi"
-        @select-compose-outro-image="onSelectComposeOutroImageUi"
-        @select-compose-overlay-image="onSelectComposeOverlayImageUi"
-        @scale-mode-change="onScaleModeChange"
-        @out-width-change="onOutWidthChange"
-        @out-height-change="onOutHeightChange"
-        @aspect-ratio-change="onAspectRatioChange"
-        @scale-pad-change="onScalePadChange"
-    />
-
-    <VideoMosaicDialog
-        v-model="mosaicDialogOpen"
-        :video-path="mosaicVideoPath"
-        :regions="mosaicRegions"
-        @confirm="onMosaicConfirm"
-    />
-
-    <StitchOrderDialog
-        v-model="stitchOrderOpen"
-        :mode="stitchOrderMode"
-        :paths="stitchOrderPaths"
-        :editable="stitchOrderEditable"
-        :layout="stitchOrderTask?.options?.image?.layout || imageLayout"
-        :grid-cols="stitchOrderTask?.options?.image?.gridCols ?? imageGridCols"
-        :gap="stitchOrderTask?.options?.image?.gap ?? imageGap"
-        :background="stitchOrderTask?.options?.image?.background || imageBackground"
-        @confirm="onStitchOrderConfirm"
-        @append="onStitchOrderAppend"
-    />
-
-    <div class="workspace">
-      <!-- 打码：无任务列表的单页工作台 -->
-      <MosaicWorkbench
-          v-if="isVideoMosaicMode"
-          :task="mosaicTask"
-          :dragging="dragging"
-          :mosaic-region-count="mosaicRegionCount"
-          :mosaic-editable="mosaicEditable"
-          @add="onSelectFiles"
-          @edit-mosaics="openMosaicEditor"
-          @start="startOne"
-          @cancel="cancelOne"
-          @open="openOutput"
-          @show-in-folder="showInFolder"
-          @clear="onMosaicClear"
+    <div class="shell">
+      <ModeSidebar
+          :app-version="appVersion"
+          :concurrency="concurrency"
+          :task-mode="taskMode"
+          @task-mode-change="handleTaskModeChange"
       />
 
-      <template v-else>
-        <DropZone
-            :compact="tasks.length > 0"
-            :dragging="dragging"
-            :task-mode="taskMode"
-            :show-task-edit-hint="pendingCount > 1"
-            @click="onSelectFiles"
-        />
-
-        <SizeSummaryBar
-            :count="sizeSummary.count"
-            :ratio="sizeSummary.ratio"
-            :total-in="sizeSummary.totalIn"
-            :total-out="sizeSummary.totalOut"
-        />
-
-        <TaskTable
+      <div class="shell-main">
+        <CompressOptionsPanel
+            :aspect-ratio="aspectRatio"
+            :audio-bitrate="audioBitrate"
+            :audio-format="audioFormat"
+            :compat-profile="compatProfile"
+            :compose-fit-intro-outro="composeFitIntroOutro"
+            :compose-intro-duration="composeIntroDuration"
+            :compose-intro-path="composeIntroPath"
+            :compose-outro-duration="composeOutroDuration"
+            :compose-outro-path="composeOutroPath"
+            :compose-overlay-end-sec="composeOverlayEndSec"
+            :compose-overlay-margin="composeOverlayMargin"
+            :compose-overlay-opacity="composeOverlayOpacity"
+            :compose-overlay-path="composeOverlayPath"
+            :compose-overlay-position="composeOverlayPosition"
+            :compose-overlay-scale-percent="composeOverlayScalePercent"
+            :compose-overlay-start-sec="composeOverlayStartSec"
+            :concat-prefer-copy="concatPreferCopy"
+            :concurrency="concurrency"
+            :crop-compose-warning-text="cropComposeWarningText"
+            :crop-h="cropH"
+            :crop-preview-path="cropPreviewPath"
+            :crop-w="cropW"
+            :crop-x="cropX"
+            :crop-y="cropY"
+            :custom="custom"
+            :encode-preset="encodePreset"
+            :encoder="encoder"
+            :encoder-info="encoderInfo"
+            :fps="fps"
             :has-active="hasActive"
             :has-pending="hasPending"
-            :tasks="tasks"
-            :selected-task-id="selectedTaskId"
-            @cancel-all="cancelAll"
-            @cancel-one="cancelOne"
-            @clear-all="clearAll"
-            @clear-finished="clearFinished"
-            @open-output="openOutput"
-            @remove-one="removeOne"
-            @select-task="selectTask"
-            @show-in-folder="showInFolder"
+            :image-background="imageBackground"
+            :image-format="imageFormat"
+            :image-gap="imageGap"
+            :image-grid-cols="imageGridCols"
+            :image-layout="imageLayout"
+            :image-max-edge="imageMaxEdge"
+            :image-quality="imageQuality"
+            :image-strip="imageStrip"
+            :is-audio-mode="isAudioMode"
+            :is-custom="isCustom"
+            :is-image-mode="isImageMode"
+            :is-media-compose-mode="isMediaComposeMode"
+            :is-video-compress-mode="isVideoCompressMode"
+            :is-video-concat-mode="isVideoConcatMode"
+            :is-video-mosaic-mode="isVideoMosaicMode"
+            :is-webm="isWebm"
+            :mosaic-frame-by-frame="mosaicFrameByFrame"
+            :mute-audio="muteAudio"
+            :name-template="nameTemplate"
+            :name-template-custom="nameTemplateCustom"
+            :out-height="outHeight"
+            :out-width="outWidth"
+            :output-dir="outputDir"
+            :output-dir-mode="outputDirMode"
+            :preset-description="currentPreset.description"
+            :preset-id="presetId"
+            :rotate90="rotate90"
+            :scale-mode="scaleMode"
+            :scale-pad="scalePad"
+            :show-crop-compose-warning="showCropComposeGlobalWarning"
+            :target-size-mb="targetSizeMb"
+            :task-mode="taskMode"
+            :trim-end="trimEnd"
+            :trim-start="trimStart"
+            :two-pass="twoPass"
+            :video-audio-bitrate="videoAudioBitrate"
+            :watermark-font-size="watermarkFontSize"
+            :watermark-image-path="watermarkImagePath"
+            :watermark-margin="watermarkMargin"
+            :watermark-mode="watermarkMode"
+            :watermark-opacity="watermarkOpacity"
+            :watermark-position="watermarkPosition"
+            :watermark-scale-percent="watermarkScalePercent"
+            :watermark-text="watermarkText"
+            @apply-to-pending="applyOptionsToPending"
             @start-all="startAll"
-            @start-one="startOne"
-            @open-stitch-order="openStitchOrder"
+            @audio-bitrate-change="onAudioBitrateChange"
+            @audio-format-change="onAudioFormatChange"
+            @compat-profile-change="onCompatProfileChange"
+            @concurrency-change="onConcurrencyChange"
+            @custom-name-template-input="onCustomNameTemplateInput"
+            @encode-preset-change="onEncodePresetChange"
+            @encoder-change="onEncoderChange"
+            @fps-change="onFpsChange"
+            @mute-audio-change="onMuteAudioChange"
+            @name-template-change="onNameTemplateChange"
+            @output-dir-mode-change="onOutputDirModeChange"
+            @preset-change="onPresetChange"
+            @rotate90-change="onRotate90Change"
+            @select-output="onSelectOutput"
+            @select-watermark-image="onSelectWatermarkImage"
+            @target-size-mb-change="onTargetSizeMbChange"
+            @trim-end-change="onTrimEndChange"
+            @trim-start-change="onTrimStartChange"
+            @two-pass-change="onTwoPassChange"
+            @video-audio-bitrate-change="onVideoAudioBitrateChange"
+            @watermark-mode-change="onWatermarkModeChange"
+            @watermark-image-path-change="onWatermarkImagePathChange"
+            @watermark-text-change="onWatermarkTextChange"
+            @watermark-position-change="onWatermarkPositionChange"
+            @watermark-opacity-change="onWatermarkOpacityChange"
+            @watermark-scale-percent-change="onWatermarkScalePercentChange"
+            @watermark-font-size-change="onWatermarkFontSizeChange"
+            @watermark-margin-change="onWatermarkMarginChange"
+            @image-format-change="onImageFormatChange"
+            @image-quality-change="onImageQualityChange"
+            @image-max-edge-change="onImageMaxEdgeChange"
+            @image-strip-change="onImageStripChange"
+            @image-layout-change="onImageLayoutChange"
+            @image-grid-cols-change="onImageGridColsChange"
+            @image-gap-change="onImageGapChange"
+            @image-background-change="onImageBackgroundChange"
+            @crop-x-change="onCropXChangeUi"
+            @crop-y-change="onCropYChangeUi"
+            @crop-w-change="onCropWChangeUi"
+            @crop-h-change="onCropHChangeUi"
+            @concat-prefer-copy-change="onConcatPreferCopyChange"
+            @mosaic-frame-by-frame-change="onMosaicFrameByFrameChange"
+            @compose-intro-path-change="onComposeIntroPathChangeUi"
+            @compose-intro-duration-change="onComposeIntroDurationChangeUi"
+            @compose-outro-path-change="onComposeOutroPathChangeUi"
+            @compose-outro-duration-change="onComposeOutroDurationChangeUi"
+            @compose-overlay-path-change="onComposeOverlayPathChangeUi"
+            @compose-overlay-position-change="onComposeOverlayPositionChangeUi"
+            @compose-overlay-opacity-change="onComposeOverlayOpacityChangeUi"
+            @compose-overlay-scale-percent-change="onComposeOverlayScalePercentChangeUi"
+            @compose-overlay-margin-change="onComposeOverlayMarginChangeUi"
+            @compose-overlay-start-sec-change="onComposeOverlayStartSecChangeUi"
+            @compose-overlay-end-sec-change="onComposeOverlayEndSecChangeUi"
+            @compose-fit-intro-outro-change="onComposeFitIntroOutroChangeUi"
+            @select-compose-intro-image="onSelectComposeIntroImageUi"
+            @select-compose-outro-image="onSelectComposeOutroImageUi"
+            @select-compose-overlay-image="onSelectComposeOverlayImageUi"
+            @scale-mode-change="onScaleModeChange"
+            @out-width-change="onOutWidthChange"
+            @out-height-change="onOutHeightChange"
+            @aspect-ratio-change="onAspectRatioChange"
+            @scale-pad-change="onScalePadChange"
         />
-      </template>
+
+        <VideoMosaicDialog
+            v-model="mosaicDialogOpen"
+            :regions="mosaicRegions"
+            :video-path="mosaicVideoPath"
+            @confirm="onMosaicConfirm"
+        />
+
+        <StitchOrderDialog
+            v-model="stitchOrderOpen"
+            :background="stitchOrderTask?.options?.image?.background || imageBackground"
+            :editable="stitchOrderEditable"
+            :gap="stitchOrderTask?.options?.image?.gap ?? imageGap"
+            :grid-cols="stitchOrderTask?.options?.image?.gridCols ?? imageGridCols"
+            :layout="stitchOrderTask?.options?.image?.layout || imageLayout"
+            :mode="stitchOrderMode"
+            :paths="stitchOrderPaths"
+            @append="onStitchOrderAppend"
+            @confirm="onStitchOrderConfirm"
+        />
+
+        <div class="workspace">
+          <!-- 打码：无任务列表的单页工作台 -->
+          <MosaicWorkbench
+              v-if="isVideoMosaicMode"
+              :dragging="dragging"
+              :mosaic-editable="mosaicEditable"
+              :mosaic-region-count="mosaicRegionCount"
+              :task="mosaicTask"
+              @add="onSelectFiles"
+              @cancel="cancelOne"
+              @clear="onMosaicClear"
+              @open="openOutput"
+              @start="startOne"
+              @edit-mosaics="openMosaicEditor"
+              @show-in-folder="showInFolder"
+          />
+
+          <template v-else>
+            <DropZone
+                :compact="tasks.length > 0"
+                :dragging="dragging"
+                :show-task-edit-hint="pendingCount > 1"
+                :task-mode="taskMode"
+                @click="onSelectFiles"
+            />
+
+            <SizeSummaryBar
+                :count="sizeSummary.count"
+                :ratio="sizeSummary.ratio"
+                :total-in="sizeSummary.totalIn"
+                :total-out="sizeSummary.totalOut"
+            />
+
+            <TaskTable
+                :has-active="hasActive"
+                :selected-task-id="selectedTaskId"
+                :tasks="tasks"
+                @cancel-all="cancelAll"
+                @cancel-one="cancelOne"
+                @clear-all="clearAll"
+                @clear-finished="clearFinished"
+                @open-output="openOutput"
+                @remove-one="removeOne"
+                @select-task="selectTask"
+                @show-in-folder="showInFolder"
+                @start-one="startOne"
+                @open-stitch-order="openStitchOrder"
+            />
+          </template>
+        </div>
+      </div>
     </div>
   </div>
 </template>
