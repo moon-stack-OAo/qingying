@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from 'child_process'
+import { spawn } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -15,6 +15,7 @@ import {
   parseProgressLine
 } from '../../../shared/ffmpegLogic'
 import { mapFfmpegError } from '../../../shared/errorMap'
+import { killChildProcess } from '../processKill'
 import { getFfmpegPath, getFfprobePath } from './bin'
 import { checkSharpReady } from '../image/bin'
 import {
@@ -92,20 +93,6 @@ function removeDirRecursive(dir: string): void {
 function removeFile(p: string): void {
   try {
     if (fs.existsSync(p)) fs.unlinkSync(p)
-  } catch {
-    // ignore
-  }
-}
-
-function killProcess(proc: ChildProcess): void {
-  try {
-    proc.kill('SIGTERM')
-    if (process.platform === 'win32' && proc.pid) {
-      spawn('taskkill', ['/pid', String(proc.pid), '/f', '/t'], {
-        windowsHide: true,
-        stdio: 'ignore'
-      })
-    }
   } catch {
     // ignore
   }
@@ -280,7 +267,7 @@ function extractAllFrames(params: {
 
     const cancelChecker = setInterval(() => {
       if (signal?.cancelled && proc && !proc.killed) {
-        killProcess(proc)
+        killChildProcess(proc)
       }
     }, 300)
 
@@ -494,7 +481,7 @@ function encodeFromFrames(params: {
 
     const cancelChecker = setInterval(() => {
       if (signal?.cancelled && proc && !proc.killed) {
-        killProcess(proc)
+        killChildProcess(proc)
       }
     }, 300)
 

@@ -26,6 +26,7 @@ import {
   type VideoFilterPlan
 } from '../../../shared/ffmpegLogic'
 import { isHardwareEncoderFailure, mapFfmpegError } from '../../../shared/errorMap'
+import { killChildProcess } from '../processKill'
 import { getFfmpegPath } from './bin'
 import { detectHardwareEncoders, probeDuration, probeHasAudioStream } from './probe'
 import { getFileSize, pathExistsAsync } from './paths'
@@ -385,18 +386,7 @@ function runOnce(params: RunOnceParams): Promise<RunCompressResult> {
 
     const cancelChecker = setInterval(() => {
       if (signal?.cancelled && proc && !proc.killed) {
-        try {
-          // Windows 下 kill 子进程
-          proc.kill('SIGTERM')
-          if (process.platform === 'win32') {
-            spawn('taskkill', ['/pid', String(proc.pid), '/f', '/t'], {
-              windowsHide: true,
-              stdio: 'ignore'
-            })
-          }
-        } catch {
-          // ignore
-        }
+        killChildProcess(proc)
       }
     }, 300)
 

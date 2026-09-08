@@ -9,6 +9,11 @@ import type {
 import { IpcChannels } from '../../shared/types'
 import { isImageMode } from '../../shared/ffmpegLogic'
 import {
+  clampTaskConcurrency,
+  isStaleQueueItem,
+  shouldNotifyCancelOnDrop
+} from '../../shared/taskQueueLogic'
+import {
   buildOutputPath,
   detectHardwareEncoders,
   getFileSizeAsync,
@@ -75,8 +80,7 @@ export class TaskQueue {
   }
 
   setConcurrency(n: number): number {
-    const v = Math.max(1, Math.min(4, Math.floor(n) || 1))
-    this.concurrency = v
+    this.concurrency = clampTaskConcurrency(n)
     void this.pump()
     return this.concurrency
   }
@@ -263,7 +267,7 @@ export class TaskQueue {
     if (running) {
       running.signal.cancelled = true
       this.running.delete(taskId)
-      if (reason === 'cancelled') {
+      if (shouldNotifyCancelOnDrop(reason)) {
         this.batchCancelled += 1
         this.send(IpcChannels.TASK_END, {
           taskId,
@@ -276,7 +280,7 @@ export class TaskQueue {
     for (let i = this.queue.length - 1; i >= 0; i -= 1) {
       if (this.queue[i].task.id !== taskId) continue
       const [item] = this.queue.splice(i, 1)
-      if (reason === 'cancelled') {
+      if (shouldNotifyCancelOnDrop(reason)) {
         this.batchCancelled += 1
         this.send(IpcChannels.TASK_END, {
           taskId: item.task.id,
@@ -387,7 +391,7 @@ export class TaskQueue {
     item?: QueueItem
   ): void {
     // 同 id 已被替换：旧 run 收尾时不再向 UI 推终态，避免盖掉新任务
-    if (item && this.running.get(task.id) !== item) {
+    if (isStaleQueueItem(task.id, item, this.running)) {
       return
     }
     if (result.code === -1 || signal.cancelled) {

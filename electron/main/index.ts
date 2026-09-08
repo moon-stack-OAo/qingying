@@ -55,6 +55,7 @@ import {
   allowDir,
   allowPath,
   allowPaths,
+  isAllowedOutputDirForPersist,
   isPathAllowed,
   pathNotAllowedError
 } from './pathAllowlist'
@@ -450,20 +451,10 @@ function collectTaskAssetPaths(task: CompressTask): string[] {
   return out
 }
 
-/** 将已持久化任务的路径登记到允许列表 */
-function allowTaskPaths(task: CompressTask): void {
-  allowPaths(resolveTaskInputPaths(task))
-  allowPaths(collectTaskAssetPaths(task))
-  if (typeof task.outputPath === 'string' && task.outputPath.trim()) {
-    allowPath(task.outputPath.trim())
-  }
-  const outDir = task.options?.outputDir
-  if (typeof outDir === 'string' && outDir.trim()) {
-    allowDir(outDir.trim())
-  }
-}
-
-/** 启动时播种允许根：userData、设置输出目录、LAN 目录、历史任务 */
+/**
+ * 启动时播种允许根：仅 userData 相关目录 + 已校验的 settings.outputDir。
+ * 禁止从持久化任务回灌路径（否则 TASKS_SAVE 可注入任意路径扩大白名单）。
+ */
 function seedPathAllowlist(settings: AppSettings): void {
   try {
     const userData = app.getPath('userData')
@@ -475,18 +466,9 @@ function seedPathAllowlist(settings: AppSettings): void {
     console.warn('[main] seed userData allowlist failed:', err)
   }
 
+  // settings.outputDir 仅能经 SETTINGS_SET 校验后写入，故启动时可信
   if (typeof settings.outputDir === 'string' && settings.outputDir.trim()) {
     allowDir(settings.outputDir.trim())
-  }
-
-  try {
-    if (settings.persistTasks !== false) {
-      for (const t of loadTasks()) {
-        allowTaskPaths(t)
-      }
-    }
-  } catch (err) {
-    console.warn('[main] seed tasks allowlist failed:', err)
   }
 }
 
@@ -778,6 +760,12 @@ function registerIpc(): void {
       }
     }
     const prev = getSettings()
+    // outputDir 必须已在白名单（SELECT_DIR）或与当前可信设置相同，禁止任意路径回灌
+    if (typeof part.outputDir === 'string') {
+      if (!isAllowedOutputDirForPersist(part.outputDir, prev.outputDir)) {
+        delete part.outputDir
+      }
+    }
     const next = saveSettings(part)
     if (typeof part.concurrency === 'number') {
       taskQueue.setConcurrency(next.concurrency)
@@ -806,6 +794,7 @@ function registerIpc(): void {
   handleFromMainWindow(IpcChannels.SETTINGS_RESET, async () => {
     stopLanServer()
     const next = resetSettings()
+    taskQueue.setConcurrency(next.concurrency)
     setBinaryOverride('')
     setMagickPath('')
     setImageEngine(next.imageEngine)
@@ -948,18 +937,14 @@ function registerIpc(): void {
     app.exit(0)
   })
 
-  // 任务列表持久化：读
+  // 任务列表持久化：读（不扩展 allowlist，避免经 TASKS_SAVE 回灌任意路径）
   handleFromMainWindow(IpcChannels.TASKS_GET, async () => {
     try {
       const settings = getSettings()
       if (settings.persistTasks === false) {
         return []
       }
-      const tasks = loadTasks()
-      for (const t of tasks) {
-        allowTaskPaths(t)
-      }
-      return tasks
+      return loadTasks()
     } catch (err) {
       console.warn('[main] TASKS_GET failed:', err)
       return []

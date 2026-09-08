@@ -8,6 +8,7 @@ import {
   allowDir,
   allowPath,
   canonicalizePath,
+  isAllowedOutputDirForPersist,
   isPathAllowed,
   isPathInsideRoot,
   pathNotAllowedError,
@@ -89,5 +90,16 @@ describe('pathAllowlist', () => {
     expect(safeJoinUnderRoot(root, '/../secret.txt')).toBeNull()
     expect(safeJoinUnderRoot(root, '/..%2Fsecret.txt')).toBeNull()
     expect(safeJoinUnderRoot(root, '/%2e%2e/secret.txt')).toBeNull()
+  })
+
+  it('isAllowedOutputDirForPersist 拒绝未入白名单的新路径回灌', () => {
+    const trusted = path.join(os.tmpdir(), 'qy-trusted-out')
+    const evil = path.join(os.tmpdir(), 'qy-evil-out')
+    expect(isAllowedOutputDirForPersist('', trusted)).toBe(true)
+    expect(isAllowedOutputDirForPersist(trusted, trusted)).toBe(true)
+    expect(isAllowedOutputDirForPersist(trusted + path.sep, trusted)).toBe(true)
+    expect(isAllowedOutputDirForPersist(evil, trusted)).toBe(false)
+    allowDir(evil)
+    expect(isAllowedOutputDirForPersist(evil, trusted)).toBe(true)
   })
 })

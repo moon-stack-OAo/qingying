@@ -128,6 +128,22 @@ export function pathNotAllowedError(label = '路径'): string {
   return `${label}不在允许访问范围内`
 }
 
+/**
+ * 判断 SETTINGS_SET 是否可持久化新的 outputDir。
+ * 允许：清空；与当前已信任设置相同；或路径已在本会话白名单内（如 SELECT_DIR 刚登记）。
+ * 禁止：渲染进程写入任意新路径以在下次启动时扩大白名单。
+ */
+export function isAllowedOutputDirForPersist(
+  nextDir: string,
+  currentTrustedDir: string
+): boolean {
+  const next = (nextDir || '').trim()
+  if (!next) return true
+  const cur = (currentTrustedDir || '').trim()
+  if (cur && canonicalizePath(next) === canonicalizePath(cur)) return true
+  return isPathAllowed(next)
+}
+
 /** 仅测试用：清空集合 */
 export function _resetAllowlistForTests(): void {
   allowedDirs.clear()

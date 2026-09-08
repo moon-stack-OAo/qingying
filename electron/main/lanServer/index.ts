@@ -1198,7 +1198,7 @@ async function handleRequest(
   req: IncomingMessage,
   res: ServerResponse
 ): Promise<void> {
-  // CORS：仅局域网同源使用，仍允许简单跨源调试
+  // 局域网页与 API 同源（本机静态资源 + Cookie SameSite=Lax），不提供 CORS
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('Cache-Control', 'no-store')
 
@@ -1207,16 +1207,6 @@ async function handleRequest(
   const pathOnly = url.split('?')[0]
 
   try {
-    if (method === 'OPTIONS') {
-      res.writeHead(204, {
-        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Credentials': 'true'
-      })
-      res.end()
-      return
-    }
-
     if (pathOnly === '/api/status' && method === 'GET') {
       handleStatus(req, res)
       return

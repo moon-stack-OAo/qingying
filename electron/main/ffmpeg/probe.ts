@@ -4,6 +4,7 @@ import type {
   EncoderId,
   ResolvedEncoder
 } from '../../../shared/types'
+import { killChildProcess } from '../processKill'
 import { getFfmpegPath, getFfprobePath } from './bin'
 
 let encoderCache: EncoderDetectResult | null = null
@@ -100,20 +101,6 @@ function buildAvailability(
 /** 任务取消信号（与队列共用） */
 export type DetectCancelSignal = { cancelled: boolean }
 
-function killProcTree(proc: ChildProcess): void {
-  try {
-    proc.kill('SIGTERM')
-    if (process.platform === 'win32' && proc.pid) {
-      spawn('taskkill', ['/pid', String(proc.pid), '/f', '/t'], {
-        windowsHide: true,
-        stdio: 'ignore'
-      })
-    }
-  } catch {
-    // ignore
-  }
-}
-
 /**
  * 用极短 lavfi 黑帧试编，验证硬件编码器是否真正可用
  * 失败/超时/取消则返回 false
@@ -178,13 +165,13 @@ function trialEncode(
 
     const cancelPoll = setInterval(() => {
       if (signal?.cancelled) {
-        killProcTree(proc)
+        killChildProcess(proc)
         finish(false)
       }
     }, 200)
 
     const timer = setTimeout(() => {
-      killProcTree(proc)
+      killChildProcess(proc)
       finish(false)
     }, timeoutMs)
 
@@ -250,7 +237,7 @@ export async function detectHardwareEncoders(
 
     const cancelPoll = setInterval(() => {
       if (signal?.cancelled) {
-        killProcTree(proc)
+        killChildProcess(proc)
         finish({ codecs: {}, error: '已取消' })
       }
     }, 200)
@@ -478,13 +465,13 @@ export function probeDuration(
 
     const cancelPoll = setInterval(() => {
       if (signal?.cancelled) {
-        killProcTree(proc)
+        killChildProcess(proc)
         finish(0)
       }
     }, 200)
 
     const timer = setTimeout(() => {
-      killProcTree(proc)
+      killChildProcess(proc)
       finish(0)
     }, PROBE_DURATION_TIMEOUT_MS)
 

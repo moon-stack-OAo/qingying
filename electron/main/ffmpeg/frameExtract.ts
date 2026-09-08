@@ -2,6 +2,7 @@ import {spawn} from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import {VIDEO_EXTENSIONS} from '../../../shared/types'
+import {killChildProcess} from '../processKill'
 import {getFfmpegPath, getFfprobePath} from './bin'
 import {checkSharpReady} from '../image/bin'
 
@@ -231,11 +232,7 @@ function extractJpegBuffer(
     )
 
     const timer = setTimeout(() => {
-      try {
-        proc.kill('SIGTERM')
-      } catch {
-        // ignore
-      }
+      killChildProcess(proc)
       finish(null)
     }, 30_000)
 

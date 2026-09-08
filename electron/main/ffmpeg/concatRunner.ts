@@ -21,6 +21,7 @@ import {
   isHardwareEncoderFailure,
   mapFfmpegError
 } from '../../../shared/errorMap'
+import { killChildProcess } from '../processKill'
 import { getFfmpegPath } from './bin'
 import {
   detectHardwareEncoders,
@@ -55,20 +56,6 @@ function removeIncompleteOutput(outputPath: string): void {
   try {
     if (fs.existsSync(outputPath)) {
       fs.unlinkSync(outputPath)
-    }
-  } catch {
-    // ignore
-  }
-}
-
-function killProcess(proc: ChildProcess): void {
-  try {
-    proc.kill('SIGTERM')
-    if (process.platform === 'win32' && proc.pid) {
-      spawn('taskkill', ['/pid', String(proc.pid), '/f', '/t'], {
-        windowsHide: true,
-        stdio: 'ignore'
-      })
     }
   } catch {
     // ignore
@@ -216,7 +203,7 @@ function spawnFfmpeg(params: {
 
     const cancelChecker = setInterval(() => {
       if (signal?.cancelled && proc && !proc.killed) {
-        killProcess(proc)
+        killChildProcess(proc)
       }
     }, 300)
 

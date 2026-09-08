@@ -1,5 +1,6 @@
-import { spawn, type ChildProcess } from 'child_process'
 import fs from 'fs'
+
+export { killChildProcess } from '../processKill'
 
 /** 与 taskQueue / ffmpeg runner 统一的取消信号 */
 export type TaskCancelSignal = { cancelled: boolean }
@@ -15,21 +16,6 @@ export function removeIncompleteOutput(outputPath: string): void {
   try {
     if (fs.existsSync(p)) {
       fs.unlinkSync(p)
-    }
-  } catch {
-    // ignore
-  }
-}
-
-/** 强制结束子进程（Windows 用 taskkill 杀进程树） */
-export function killChildProcess(proc: ChildProcess): void {
-  try {
-    proc.kill('SIGTERM')
-    if (process.platform === 'win32' && proc.pid) {
-      spawn('taskkill', ['/pid', String(proc.pid), '/f', '/t'], {
-        windowsHide: true,
-        stdio: 'ignore'
-      })
     }
   } catch {
     // ignore
