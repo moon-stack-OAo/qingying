@@ -64,11 +64,28 @@ function extractSection(changelog, version) {
 function buildReleaseBody(version, sectionBody) {
   const ver = normalizeVersion(version)
   const title = `# 轻影 v${ver}`
+  const downloadSection = [
+    '## 下载与安装',
+    '',
+    '| 平台 | 建议下载 |',
+    '|------|----------|',
+    `| Windows x64 | \`qingying-${ver}-win-x64.exe\`（NSIS 安装包） |`,
+    `| macOS Apple Silicon | \`qingying-${ver}-mac-arm64.dmg\` |`,
+    `| macOS Intel | \`qingying-${ver}-mac-x64.dmg\` |`,
+    '',
+    '- 已安装用户可用应用内「检查更新」；`latest.yml` / `latest-mac.yml` 供自动更新使用，一般无需手动下载。',
+    '- **当前构建通常未代码签名**（证书就绪前）：',
+    '  - **Windows**：SmartScreen 可能提示「未知发布者」→「更多信息」→「仍要运行」。',
+    '  - **macOS**：「无法验证开发者」时对 App **右键 → 打开**；若提示「已损坏」，终端执行 `xattr -cr "/Applications/轻影.app"`（路径按实际安装位置修改）。'
+  ]
+
   if (!sectionBody || !sectionBody.trim()) {
     return [
       title,
       '',
       '> 未在 CHANGELOG.md 中找到该版本小节，请补充后重新发版。',
+      '',
+      ...downloadSection,
       '',
       '详见仓库 [CHANGELOG.md](https://github.com/moon-stack-OAo/qingying/blob/main/CHANGELOG.md)。'
     ].join('\n')
@@ -80,6 +97,8 @@ function buildReleaseBody(version, sectionBody) {
     sectionBody.trim(),
     '',
     '---',
+    '',
+    ...downloadSection,
     '',
     '完整变更记录见 [CHANGELOG.md](https://github.com/moon-stack-OAo/qingying/blob/main/CHANGELOG.md)。',
     '发版说明见 [docs/RELEASE.md](https://github.com/moon-stack-OAo/qingying/blob/main/docs/RELEASE.md)。'
