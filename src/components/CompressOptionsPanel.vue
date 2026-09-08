@@ -557,7 +557,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
       <!-- compress -->
       <template v-if="isVideoCompressMode">
         <div class="opt-row opt-row-wrap">
-          <div class="opt-item opt-item-fill">
+          <div class="opt-item">
             <span class="label">预设</span>
             <el-radio-group
               :model-value="presetId"
@@ -1172,7 +1172,6 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
         type="button"
         @click="advancedOpen = true"
       >
-        <span class="opt-advanced-chevron">▸</span>
         <span>高级参数</span>
         <span class="muted">{{ advancedSummary }}</span>
       </button>
