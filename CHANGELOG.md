@@ -9,6 +9,28 @@
 
 - Windows 代码签名、macOS 公证完整链路（配置与证书就绪后启用）
 
+## [1.2.2]
+
+### 安全
+
+- **路径白名单**：禁止从持久化任务 / 未校验的 `outputDir` 回灌扩大允许目录；`SETTINGS_SET` 仅接受本会话已登记或与当前可信设置相同的输出目录
+- **局域网**：移除不完整且易误导的 OPTIONS CORS 头（上传页与 API 同源，无需跨源）
+
+### 修复
+
+- 重置设置后同步任务队列并发数，与「保存设置」一致
+
+### 优化
+
+- 统一 FFmpeg / 探测 / 抽帧子进程取消为 `processKill.killChildProcess`
+- 模式侧栏宽度 220px → 200px
+- 高级参数入口去掉误导性展开箭头（实际为右侧抽屉）
+- 视频压缩「预设」不再 `flex` 撑开，与目标体积 / 编码器间距保持稳定
+
+### 测试
+
+- 补充 pathAllowlist 持久化校验、IPC 通道对账、`processKill`、`taskQueueLogic` 用例
+
 ## [1.2.1]
 
 ### 优化
@@ -226,7 +248,11 @@
 | `Ctrl/Cmd + D`                                | 切换浅色 / 深色 |
 | `F1` 或 `Ctrl + /`                             | 快捷键帮助     |
 
-[Unreleased]: https://github.com/moon-stack-OAo/qingying/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/moon-stack-OAo/qingying/compare/v1.2.2...HEAD
+
+[1.2.2]: https://github.com/moon-stack-OAo/qingying/releases/tag/v1.2.2
+
+[1.2.1]: https://github.com/moon-stack-OAo/qingying/releases/tag/v1.2.1
 
 [1.2.0]: https://github.com/moon-stack-OAo/qingying/releases/tag/v1.2.0
 
