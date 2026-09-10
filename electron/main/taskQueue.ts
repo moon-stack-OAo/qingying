@@ -25,6 +25,7 @@ import {
   uniqueOutputPathAsync
 } from './ffmpeg'
 import { processImage } from './image'
+import { allowOutputPath, isPathAllowed } from './pathAllowlist'
 import { getSettings } from './settings'
 
 interface QueueItem {
@@ -153,7 +154,11 @@ export class TaskQueue {
       const out = this.lastCompletedOutput
       if (out && this.batchCompleted > 0) {
         n.on('click', () => {
-          shell.showItemInFolder(out)
+          // 与 IPC 一致：确保精确输出已登记后再打开（不放开父目录）
+          allowOutputPath(out)
+          if (isPathAllowed(out)) {
+            shell.showItemInFolder(out)
+          }
         })
       }
       n.show()
@@ -209,6 +214,8 @@ export class TaskQueue {
     try {
       const rawOut = buildOutputPath(primary, task.options)
       task.outputPath = await uniqueOutputPathAsync(rawOut)
+      // 实际输出可能因去重改名；显式登记，不依赖父目录放行
+      if (task.outputPath) allowOutputPath(task.outputPath)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       return { ok: false, error: msg || '无法生成输出路径' }
@@ -501,6 +508,7 @@ export class TaskQueue {
       // 若引擎改写了扩展名，更新 task.outputPath 以便 UI 打开正确文件
       if (outPath && outPath !== task.outputPath) {
         task.outputPath = outPath
+        allowOutputPath(outPath)
       }
       this.emitResult(
         task,

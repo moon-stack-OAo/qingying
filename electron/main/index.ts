@@ -1,7 +1,6 @@
 import {
   app,
   BrowserWindow,
-  dialog,
   ipcMain,
   Menu,
   nativeImage,
@@ -9,53 +8,40 @@ import {
   shell,
   Tray
 } from 'electron'
-import {basename, dirname, extname, join} from 'path'
-import {existsSync, statSync} from 'fs'
+import {basename, join} from 'path'
+import {existsSync} from 'fs'
 import type {
   AppSettings,
   CloseAction,
-  CompressTask,
-  ImageProcessOptions,
-  LanRemoteConfigInput
+  CompressTask
 } from '../../shared/types'
-import {
-  IMAGE_EXTENSIONS,
-  IpcChannels,
-  VIDEO_EXTENSIONS
-} from '../../shared/types'
+import { IpcChannels } from '../../shared/types'
+import { isAllowedExternalUrl } from '../../shared/urlAllowlist'
 import {
   buildOutputPath,
   checkFfmpegAvailable,
-  detectHardwareEncoders,
-  extractVideoFrame,
   setBinaryOverride
 } from './ffmpeg'
 import {
-  getImageDataUrl,
   getImageEngineStatus,
-  getImageInfo,
-  processImage,
   setImageEngine,
   setMagickPath
 } from './image'
 import {collectMediaFiles} from './mediaScan'
-import {getSettings, loadSettings, resetSettings, saveSettings} from './settings'
+import {getSettings, loadSettings, saveSettings} from './settings'
 import {clearStoredTasks, loadTasks, saveTasks} from './taskStore'
-import {applyAppIdentity, applyUserDataOverride, setUserDataDir} from './dataDir'
+import {applyAppIdentity, applyUserDataOverride} from './dataDir'
 import {APP_ID, PRODUCT_NAME} from '../../shared/brand'
 import {taskQueue} from './taskQueue'
 import {initAutoUpdater, registerUpdaterIpc} from './updater'
 import {
-  applyLanRemoteConfig,
-  getLanStatus,
   stopLanServer,
   syncLanServerFromSettings
 } from './lanServer'
 import {
   allowDir,
-  allowPath,
   allowPaths,
-  isAllowedOutputDirForPersist,
+  ensureOutputPathAllowed,
   isPathAllowed,
   pathNotAllowedError
 } from './pathAllowlist'
@@ -64,6 +50,11 @@ import {
   handleFromMainWindow,
   setMainWindowRef
 } from './ipcGuard'
+import { registerDomainIpc } from './ipc'
+import {
+  applyLoginItemSettings,
+  shouldStartHiddenToTray
+} from './loginItem'
 
 // 固定 ASCII 应用名后再读 userData，避免落到中文产品名目录
 applyAppIdentity()
@@ -81,43 +72,6 @@ let allowQuit = false
 let closeAskPending = false
 /** 开机自启且选择启动到托盘时，首屏不显示主窗口 */
 let startHiddenToTray = false
-
-const LOGIN_HIDDEN_ARG = '--hidden'
-
-function shouldStartHiddenToTray(): boolean {
-  if (process.argv.includes(LOGIN_HIDDEN_ARG)) return true
-  try {
-    return Boolean(app.getLoginItemSettings().wasOpenedAsHidden)
-  } catch {
-    return false
-  }
-}
-
-/** 同步系统登录项（Windows / macOS；Linux 无实际效果） */
-function applyLoginItemSettings(settings: {
-  openAtLogin: boolean
-  startMinimizedToTray: boolean
-}): void {
-  if (process.platform !== 'win32' && process.platform !== 'darwin') return
-  const openAtLogin = Boolean(settings.openAtLogin)
-  const startMinimizedToTray = openAtLogin && Boolean(settings.startMinimizedToTray)
-  try {
-    if (process.platform === 'win32') {
-      app.setLoginItemSettings({
-        openAtLogin,
-        path: process.execPath,
-        args: startMinimizedToTray ? [LOGIN_HIDDEN_ARG] : []
-      })
-      return
-    }
-    app.setLoginItemSettings({
-      openAtLogin,
-      openAsHidden: startMinimizedToTray
-    })
-  } catch (err) {
-    console.warn('[main] setLoginItemSettings failed:', err)
-  }
-}
 
 /** 图标搜索根目录：打包后在 process.resourcesPath/icons，开发态用仓库 resources/build */
 function iconSearchRoots(): string[] {
@@ -389,7 +343,9 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    void shell.openExternal(details.url)
+    if (isAllowedExternalUrl(details.url)) {
+      void shell.openExternal(details.url)
+    }
     return { action: 'deny' }
   })
 
@@ -412,14 +368,6 @@ function createWindow(): void {
   } else {
     void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
-}
-
-function isMediaFile(filePath: string): boolean {
-  const ext = extname(filePath).toLowerCase()
-  return (
-    (VIDEO_EXTENSIONS as string[]).includes(ext) ||
-    (IMAGE_EXTENSIONS as string[]).includes(ext)
-  )
 }
 
 /** 解析任务输入路径列表 */
@@ -507,11 +455,12 @@ function validateStartTask(
     return { ok: false, error: '请先选择输出目录' }
   }
 
-  // 校验将要写入的输出路径（或 sidecar 下的源目录）
+  // 校验将要写入的输出路径：已 allowDir 的 outputDir 直接 OK；
+  // sidecar 等同父旁路则显式登记精确 planned（不放开整目录）
   const primary = paths[0]
   try {
     const planned = buildOutputPath(primary, task.options)
-    if (!isPathAllowed(planned)) {
+    if (!ensureOutputPathAllowed(planned, paths)) {
       return { ok: false, error: pathNotAllowedError('输出路径') }
     }
   } catch {
@@ -553,388 +502,11 @@ function validateStartTask(
 }
 
 function registerIpc(): void {
-  handleFromMainWindow(
-    IpcChannels.SELECT_FILES,
-    async (
-      _e,
-      opts?: {
-        mode?: string
-        mediaKind?: 'video' | 'image' | 'all'
-      }
-    ) => {
-      if (!mainWindow) return { files: [] }
-
-      const videoExts = VIDEO_EXTENSIONS.map((e) => e.replace('.', ''))
-      const imageExts = IMAGE_EXTENSIONS.map((e) => e.replace('.', ''))
-      const mediaExts = Array.from(new Set(videoExts.concat(imageExts)))
-
-      const mode = typeof opts?.mode === 'string' ? opts.mode : ''
-      let kind: 'video' | 'image' | 'all' =
-        opts?.mediaKind === 'video' ||
-        opts?.mediaKind === 'image' ||
-        opts?.mediaKind === 'all'
-          ? opts.mediaKind
-          : 'all'
-      if (mode) {
-        if (
-          mode === 'image' ||
-          mode === 'image-crop' ||
-          mode === 'image-stitch'
-        ) {
-          kind = 'image'
-        } else if (
-          mode === 'compress' ||
-          mode === 'audio' ||
-          mode === 'video-concat' ||
-          mode === 'media-compose' ||
-          mode === 'video-mosaic'
-        ) {
-          kind = 'video'
-        }
-      }
-
-      const title =
-        kind === 'image'
-          ? '选择图片'
-          : kind === 'video'
-            ? mode === 'video-mosaic'
-              ? '选择视频（打码仅支持单个）'
-              : '选择视频'
-            : '选择媒体文件'
-
-      const filters =
-        kind === 'image'
-          ? [
-              { name: '图片文件', extensions: imageExts },
-              { name: '所有文件', extensions: ['*'] }
-            ]
-          : kind === 'video'
-            ? [
-                { name: '视频文件', extensions: videoExts },
-                { name: '所有文件', extensions: ['*'] }
-              ]
-            : [
-                { name: '媒体文件', extensions: mediaExts },
-                { name: '视频文件', extensions: videoExts },
-                { name: '图片文件', extensions: imageExts },
-                { name: '所有文件', extensions: ['*'] }
-              ]
-
-      // 视频打码仅允许单选
-      const properties: Array<'openFile' | 'multiSelections'> =
-        mode === 'video-mosaic'
-          ? ['openFile']
-          : ['openFile', 'multiSelections']
-
-      const result = await dialog.showOpenDialog(mainWindow, {
-        title,
-        properties,
-        filters
-      })
-
-      if (result.canceled || !result.filePaths.length) {
-        return { files: [] }
-      }
-
-      const files = result.filePaths
-        .filter(isMediaFile)
-        .map((p) => ({ path: p, name: basename(p) }))
-
-      allowPaths(files.map((f) => f.path))
-      return { files }
-    }
-  )
-
-  handleFromMainWindow(IpcChannels.SELECT_DIR, async (_e, defaultPath?: string) => {
-    if (!mainWindow) return { path: null }
-
-    const start = typeof defaultPath === 'string' ? defaultPath.trim() : ''
-    let defaultDir: string | undefined
-    if (start) {
-      try {
-        if (existsSync(start)) {
-          defaultDir = statSync(start).isDirectory() ? start : dirname(start)
-        } else {
-          // 目录尚不存在时，尽量落到已存在的父路径
-          let cur = start
-          while (cur && cur !== dirname(cur)) {
-            const parent = dirname(cur)
-            if (existsSync(parent)) {
-              defaultDir = parent
-              break
-            }
-            cur = parent
-          }
-        }
-      } catch {
-        defaultDir = undefined
-      }
-    }
-
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择目录',
-      properties: ['openDirectory', 'createDirectory'],
-      ...(defaultDir ? { defaultPath: defaultDir } : {})
-    })
-
-    if (result.canceled || !result.filePaths.length) {
-      return { path: null }
-    }
-    const selected = result.filePaths[0]
-    allowDir(selected)
-    return { path: selected }
-  })
-
-  handleFromMainWindow(IpcChannels.SELECT_IMAGE, async () => {
-    if (!mainWindow) return { path: null }
-
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择水印图片',
-      properties: ['openFile'],
-      filters: [
-        {
-          name: '图片',
-          extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif']
-        },
-        { name: '所有文件', extensions: ['*'] }
-      ]
-    })
-
-    if (result.canceled || !result.filePaths.length) {
-      return { path: null }
-    }
-    const selected = result.filePaths[0]
-    allowPath(selected)
-    return { path: selected }
-  })
-
-  handleFromMainWindow(IpcChannels.GET_FFMPEG_STATUS, async () => {
-    return checkFfmpegAvailable()
-  })
-
-  handleFromMainWindow(IpcChannels.DETECT_ENCODERS, async () => {
-    try {
-      return await detectHardwareEncoders(true)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return {
-        nvenc: false,
-        qsv: false,
-        amf: false,
-        videotoolbox: false,
-        preferred: 'libx264' as const,
-        error: msg
-      }
-    }
-  })
-
-  handleFromMainWindow(IpcChannels.SET_CONCURRENCY, async (_e, n: number) => {
-    const concurrency = taskQueue.setConcurrency(Number(n))
-    saveSettings({ concurrency })
-    return { concurrency }
-  })
-
-  handleFromMainWindow(IpcChannels.GET_CONCURRENCY, async () => {
-    return { concurrency: taskQueue.getConcurrency() }
-  })
-
-  handleFromMainWindow(IpcChannels.SETTINGS_GET, async () => {
-    return getSettings()
-  })
-
-  handleFromMainWindow(IpcChannels.SETTINGS_SET, async (_e, partial: Partial<AppSettings>) => {
-    // ffmpeg bin 目录需主进程校验；无效则回退不保存（避免把无效目录写盘）
-    const part = { ...(partial || {}) }
-    // 局域网密码哈希仅允许通过 LAN_SET_CONFIG 写入，避免明文/误改
-    delete (part as Partial<AppSettings> & { lanPasswordHash?: string }).lanPasswordHash
-    if (typeof part.ffmpegBinDir === 'string') {
-      const override = setBinaryOverride(part.ffmpegBinDir)
-      if (!override.accepted) {
-        delete part.ffmpegBinDir
-      }
-    }
-    if (typeof part.imagemagickPath === 'string') {
-      const magick = setMagickPath(part.imagemagickPath)
-      if (!magick.accepted) {
-        delete part.imagemagickPath
-      }
-    }
-    const prev = getSettings()
-    // outputDir 必须已在白名单（SELECT_DIR）或与当前可信设置相同，禁止任意路径回灌
-    if (typeof part.outputDir === 'string') {
-      if (!isAllowedOutputDirForPersist(part.outputDir, prev.outputDir)) {
-        delete part.outputDir
-      }
-    }
-    const next = saveSettings(part)
-    if (typeof part.concurrency === 'number') {
-      taskQueue.setConcurrency(next.concurrency)
-    }
-    if (typeof part.imageEngine === 'string') {
-      setImageEngine(next.imageEngine)
-    }
-    if (
-      typeof part.openAtLogin === 'boolean' ||
-      typeof part.startMinimizedToTray === 'boolean'
-    ) {
-      applyLoginItemSettings(next)
-    }
-    // 局域网开关/端口/用户名变更时同步 HTTP 服务
-    const lanChanged =
-      next.lanRemoteEnabled !== prev.lanRemoteEnabled ||
-      next.lanPort !== prev.lanPort ||
-      next.lanUsername !== prev.lanUsername
-    if (lanChanged) {
-      void syncLanServerFromSettings()
-    }
-    return next
-  })
-
-  // 重置全部设置为默认（删除设置文件、清除 ffmpeg / magick 覆盖）
-  handleFromMainWindow(IpcChannels.SETTINGS_RESET, async () => {
-    stopLanServer()
-    const next = resetSettings()
-    taskQueue.setConcurrency(next.concurrency)
-    setBinaryOverride('')
-    setMagickPath('')
-    setImageEngine(next.imageEngine)
-    applyLoginItemSettings(next)
-    return next
-  })
-
-  // 局域网远程访问状态
-  handleFromMainWindow(IpcChannels.LAN_GET_STATUS, async () => {
-    return getLanStatus()
-  })
-
-  // 局域网远程访问配置（开关/端口/账号/密码）
-  handleFromMainWindow(
-    IpcChannels.LAN_SET_CONFIG,
-    async (_e, config: LanRemoteConfigInput) => {
-      return applyLanRemoteConfig(config || {})
-    }
-  )
-
-  // 自定义 ffmpeg bin 目录（空串=清除覆盖）
-  handleFromMainWindow(IpcChannels.FFMPEG_SET_BIN_DIR, async (_e, dir: string) => {
-    const value = typeof dir === 'string' ? dir.trim() : ''
-    const override = setBinaryOverride(value)
-    if (!override.accepted) {
-      return { ok: false, error: override.error }
-    }
-    saveSettings({ ffmpegBinDir: value })
-    return { ok: true }
-  })
-
-  handleFromMainWindow(IpcChannels.IMAGE_STATUS, async () => {
-    return getImageEngineStatus()
-  })
-
-  handleFromMainWindow(
-    IpcChannels.IMAGE_PROCESS,
-    async (_e, options: ImageProcessOptions) => {
-      const opts = options || ({} as ImageProcessOptions)
-      const inputPath =
-        typeof opts.inputPath === 'string' ? opts.inputPath.trim() : ''
-      const outputPath =
-        typeof opts.outputPath === 'string' ? opts.outputPath.trim() : ''
-      const stitchInputs = (opts.inputs || [])
-        .map((p) => (typeof p === 'string' ? p.trim() : ''))
-        .filter(Boolean)
-
-      if (inputPath && !isPathAllowed(inputPath)) {
-        return { ok: false, error: pathNotAllowedError('输入路径') }
-      }
-      for (const p of stitchInputs) {
-        if (!isPathAllowed(p)) {
-          return { ok: false, error: pathNotAllowedError(`输入路径 ${basename(p)}`) }
-        }
-      }
-      if (outputPath && !isPathAllowed(outputPath)) {
-        return { ok: false, error: pathNotAllowedError('输出路径') }
-      }
-      return processImage(opts)
-    }
-  )
-
-  handleFromMainWindow(IpcChannels.IMAGE_SET_MAGICK_PATH, async (_e, p: string) => {
-    const value = typeof p === 'string' ? p.trim() : ''
-    const result = setMagickPath(value)
-    if (!result.accepted) {
-      return { ok: false, error: result.error }
-    }
-    saveSettings({ imagemagickPath: value })
-    return { ok: true }
-  })
-
-  handleFromMainWindow(IpcChannels.IMAGE_GET_INFO, async (_e, filePath: string) => {
-    const p = typeof filePath === 'string' ? filePath : ''
-    if (p && !isPathAllowed(p)) {
-      return { ok: false, error: pathNotAllowedError('输入路径') }
-    }
-    return getImageInfo(p)
-  })
-
-  handleFromMainWindow(
-    IpcChannels.IMAGE_GET_DATA_URL,
-    async (_e, filePath: string, maxEdge?: number) => {
-      const p = typeof filePath === 'string' ? filePath : ''
-      if (p && !isPathAllowed(p)) {
-        return { ok: false, error: pathNotAllowedError('输入路径') }
-      }
-      return getImageDataUrl(
-        p,
-        typeof maxEdge === 'number' ? maxEdge : undefined
-      )
-    }
-  )
-
-  handleFromMainWindow(
-    IpcChannels.VIDEO_EXTRACT_FRAME,
-    async (
-      _e,
-      opts: { path?: string; timeSec?: number; maxEdge?: number }
-    ) => {
-      const p = typeof opts?.path === 'string' ? opts.path : ''
-      if (p && !isPathAllowed(p)) {
-        return { ok: false, error: pathNotAllowedError('输入路径') }
-      }
-      return extractVideoFrame({
-        path: p,
-        timeSec:
-          typeof opts?.timeSec === 'number' ? opts.timeSec : undefined,
-        maxEdge:
-          typeof opts?.maxEdge === 'number' ? opts.maxEdge : undefined
-      })
-    }
-  )
+  registerDomainIpc()
 
   // 清空已持久化任务
   handleFromMainWindow(IpcChannels.TASKS_CLEAR, async () => {
     return clearStoredTasks()
-  })
-
-  // 应用信息（「设置」抽屉「关于」）
-  handleFromMainWindow(IpcChannels.APP_INFO, async () => {
-    return {
-      version: app.getVersion(),
-      packaged: app.isPackaged,
-      electron: process.versions.electron ?? '',
-      chrome: process.versions.chrome ?? '',
-      node: process.versions.node ?? '',
-      userDataPath: app.getPath('userData')
-    }
-  })
-
-  // 修改数据目录
-  handleFromMainWindow(IpcChannels.SET_DATA_DIR, async (_e, dir: string) => {
-    return setUserDataDir(typeof dir === 'string' ? dir : '')
-  })
-
-  // 重启应用（数据目录等变更后生效）
-  handleFromMainWindow(IpcChannels.RELAUNCH_APP, async () => {
-    app.relaunch()
-    app.exit(0)
   })
 
   // 任务列表持久化：读（不扩展 allowlist，避免经 TASKS_SAVE 回灌任意路径）
@@ -1078,45 +650,6 @@ function registerIpc(): void {
   handleFromMainWindow(IpcChannels.CANCEL_ALL, async () => {
     taskQueue.cancelAll()
     return { ok: true }
-  })
-
-  // 用系统默认程序打开文件或目录
-  handleFromMainWindow(IpcChannels.OPEN_PATH, async (_e, p: string) => {
-    try {
-      if (!p || typeof p !== 'string') {
-        return { ok: false, error: '路径无效' }
-      }
-      if (!isPathAllowed(p)) {
-        return { ok: false, error: pathNotAllowedError() }
-      }
-      if (!existsSync(p)) {
-        return { ok: false, error: '路径不存在' }
-      }
-      const err = await shell.openPath(p)
-      if (err) {
-        return { ok: false, error: err }
-      }
-      return { ok: true }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      return { ok: false, error: msg }
-    }
-  })
-
-  // 在资源管理器中显示并选中
-  handleFromMainWindow(IpcChannels.SHOW_ITEM_IN_FOLDER, async (_e, p: string) => {
-    try {
-      if (!p || typeof p !== 'string') {
-        return { ok: false, error: pathNotAllowedError() }
-      }
-      if (!isPathAllowed(p)) {
-        return { ok: false, error: pathNotAllowedError() }
-      }
-      shell.showItemInFolder(p)
-      return { ok: true }
-    } catch {
-      return { ok: false }
-    }
   })
 
   handleFromMainWindow(IpcChannels.WINDOW_MINIMIZE, async () => {

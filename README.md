@@ -253,7 +253,7 @@ git push origin v1.0.0
 | 并行队列  | `taskQueue` 支持 concurrency，进度按 taskId 推送                          |
 | 进度    | ffmpeg `-progress pipe:1` + stderr 兜底解析                           |
 | 测试    | vitest（`npm test`）                                                |
-| 打包二进制 | `asarUnpack` 解包 `ffmpeg-static` / `@ffprobe-installer`            |
+| 打包二进制 | `asarUnpack` 解包 `ffmpeg-static` / `@ffprobe-installer` / `sharp` / `@img`；新增 native 包须同步改 `electron-builder.yml` |
 
 ## 已知限制
 

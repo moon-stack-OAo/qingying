@@ -5,6 +5,38 @@
 
 ## [Unreleased]
 
+### 安全
+
+- **`openExternal` 协议白名单落地**：`setWindowOpenHandler` 仅对 `http:` / `https:` 调用 `shell.openExternal`（与 1.2.0 说明对齐）
+- **SETTINGS_GET / SET / RESET 脱敏**：下发渲染进程的设置省略 `lanPasswordHash`，是否已设密码仍通过 `LanStatus.hasPassword`
+- **路径白名单收紧**：`allowPath(file)` 仅登记精确文件，不再放开父目录；sidecar / 打开输出由 `allowOutputPath` 在启动校验与任务完成后显式登记；选目录与 `outputDir` / userData 仍 `allowDir` 整树放行（同目录未选中邻接文件读预览会失败，属预期）
+- **局域网默认绑定更安全**：无历史设置 / 重置后默认 `lanBindHost` 为 `127.0.0.1`（仅本机）；已持久化用户保持原值。设置页推荐「仅本机」，选 `0.0.0.0` 时加强风险确认
+- **局域网登录配对码**：绑定 `0.0.0.0` 时，登录除密码外还需桌面设置页显示的 6 位内存配对码（约 10 分钟 TTL，可刷新；改密 / 停服务 / 切换绑定作废）。仅本机绑定不要求。配对码不落盘
+- **局域网安全提示**：设置页在绑定 `0.0.0.0` 时明确提示同网可访问、HTTP 明文、强密码与配对码；未设密码禁止开启。Cookie 因明文 HTTP 不加 `Secure`（`buildSetCookie` 预留可选 `secure`，默认 false）
+- **局域网缩略图限流**：已认证 `/api/tasks/*/thumbnail` 按 IP 滑动窗口限流（默认 30 次/分钟），超限返回 429
+- **局域网下载限流**：已认证 `/api/tasks/*/download` 按 IP 滑动窗口限流（默认 20 次/分钟），超限返回 429 中文错误
+- **渲染进程 CSP**：`index.html` 增补 `object-src 'none'`、`base-uri 'self'`
+
+### 优化
+
+- **页面标题与品牌同源**：`index.html` 标题由 electron-vite 从 `shared/brand.ts` 的 `PRODUCT_NAME` 注入
+- **拖拽路径工具下沉**：`fileUrlToPath` / `pathBasename` / `isUncPath` 抽至 `shared/pathUtils`，preload 与 `useDragDrop` 共用
+- **任务恢复跳过 UNC `existsSync`**：`taskStore` 对 UNC 源路径不在启动时同步探测，避免卡死（与队列入队策略一致）
+- **chore：拆分 lanServer handlers**：`electron/main/lanServer/index.ts` 拆为 `context` / `httpUtil` / `paths` / `taskUtil` 与 `handlers/*`，对外 API 不变
+- **局域网 Web UI**：按 `docs/lan-web/DESIGN.md` 落地暗色工具风；补焦点环 / lightbox 焦点管理、进度状态色、响应式断点与触控热区
+- **局域网登录记住密码**：可选将用户名与密码存于本机浏览器 `localStorage`，下次自动回填（仅适合受信设备）
+
+### 文档
+
+- `AGENTS.md`：注明 `ffmpegLogic` 使用 Node `path`、勿打进纯浏览器包；改 native 包时核对 `asarUnpack`
+- `README`：打包二进制说明补充 `sharp` / `@img` 与同步改 `electron-builder.yml` 的提醒
+- `docs/lan-web/DESIGN.md`：局域网远程 Web 设计规范
+
+### 测试
+
+- 补充 `pathUtils` 用例
+- 补充局域网配对码 `pairCode` 用例
+
 ### 计划
 
 - Windows 代码签名、macOS 公证完整链路（配置与证书就绪后启用）

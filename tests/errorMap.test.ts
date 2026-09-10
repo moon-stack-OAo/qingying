@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { isHardwareEncoderFailure, mapFfmpegError } from '../shared/errorMap'
+import {
+  isHardwareEncoderFailure,
+  mapFfmpegError,
+  redactPathsInText
+} from '../shared/errorMap'
 
 describe('mapFfmpegError', () => {
   it('输入不存在', () => {
@@ -70,6 +74,41 @@ describe('mapFfmpegError', () => {
     expect(
       mapFfmpegError("Stream map '0:a' matches no streams")
     ).toMatch(/没有可用的音频流/)
+  })
+
+  it('未匹配规则时脱敏完整路径（仅保留 basename）', () => {
+    const winPath = 'D:\\Users\\Alice\\Videos\\demo.mp4'
+    const msg = mapFfmpegError(
+      `Something weird happened with ${winPath} and encoder`,
+      { inputPath: winPath }
+    )
+    expect(msg).toContain('demo.mp4')
+    expect(msg).not.toContain('Alice')
+    expect(msg).not.toContain('D:\\Users')
+  })
+
+  it('输入不存在类错误不泄露路径细节', () => {
+    const p = 'C:\\secret\\folder\\clip.mkv'
+    const msg = mapFfmpegError(`ENOENT: no such file or directory, open '${p}'`, {
+      inputPath: p
+    })
+    expect(msg).toMatch(/输入文件不存在/)
+    expect(msg).not.toContain('secret')
+  })
+})
+
+describe('redactPathsInText', () => {
+  it('替换 knownPaths 与 Windows 绝对路径', () => {
+    const input = 'D:\\Moon\\clip.mp4'
+    const output = 'E:\\Out\\done.mp4'
+    const text = `fail reading ${input} writing ${output}`
+    const redacted = redactPathsInText(text, [input, output])
+    expect(redacted).toBe('fail reading clip.mp4 writing done.mp4')
+  })
+
+  it('通用匹配 Unix 绝对路径', () => {
+    const text = 'error: /home/bob/movies/a.mp4 not readable'
+    expect(redactPathsInText(text)).toBe('error: a.mp4 not readable')
   })
 })
 

@@ -13,6 +13,12 @@ export function setMainWindowRef(win: BrowserWindow | null): void {
   mainWindowRef = win
 }
 
+/** 供 IPC 子模块（如 dialog）读取当前主窗口 */
+export function getMainWindowRef(): BrowserWindow | null {
+  if (!mainWindowRef || mainWindowRef.isDestroyed()) return null
+  return mainWindowRef
+}
+
 /**
  * 校验 IPC 调用来源是否为主窗口 webContents。
  * 非主窗口（含已销毁）一律拒绝，开发/生产行为一致。

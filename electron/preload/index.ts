@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type {
-  AppSettings,
+  AppSettingsPublic,
   CompressTask,
   ElectronAPI,
   ImageProcessOptions,
@@ -12,6 +12,7 @@ import type {
   UpdateStatusPayload
 } from '../../shared/types'
 import { IpcChannels } from '../../shared/types'
+import { fileUrlToPath, pathBasename } from '../../shared/pathUtils'
 
 type DroppedFile = { path: string; name: string }
 
@@ -30,37 +31,11 @@ function isDevEnv(): boolean {
   return typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production'
 }
 
-function baseName(filePath: string): string {
-  const normalized = filePath.replace(/\\/g, '/')
-  const parts = normalized.split('/')
-  return parts[parts.length - 1] || filePath
-}
-
 /** 生产环境仅输出数量与 basename，避免泄露完整路径 */
 function summarizeDroppedFiles(files: DroppedFile[]): { count: number; names: string[] } {
   return {
     count: files.length,
-    names: files.map((f) => f.name || baseName(f.path))
-  }
-}
-
-/** file:///C:/a/b.mp4 或 file:///C%3A/... → Windows 本地路径 */
-function fileUrlToPath(url: string): string {
-  const raw = url.trim()
-  if (!raw) return ''
-  try {
-    // 处理 file:// 与 file:///
-    if (!/^file:/i.test(raw)) return ''
-    const u = new URL(raw)
-    let p = decodeURIComponent(u.pathname || '')
-    // Windows: /C:/Users/... → C:/Users/...
-    if (/^\/[A-Za-z]:\//.test(p)) {
-      p = p.slice(1)
-    }
-    // 统一成系统分隔符观感（Node/ffmpeg 在 Windows 接受 / 或 \）
-    return p.replace(/\//g, '\\')
-  } catch {
-    return ''
+    names: files.map((f) => f.name || pathBasename(f.path))
   }
 }
 
@@ -128,7 +103,7 @@ function extractDroppedFiles(dt: DataTransfer | null): DroppedFile[] {
     seen.add(filePath)
     result.push({
       path: filePath,
-      name: (nameHint && nameHint.trim()) || baseName(filePath)
+      name: (nameHint && nameHint.trim()) || pathBasename(filePath)
     })
   }
 
@@ -265,7 +240,7 @@ const api: ElectronAPI = {
   setConcurrency: (n: number) => ipcRenderer.invoke(IpcChannels.SET_CONCURRENCY, n),
   getConcurrency: () => ipcRenderer.invoke(IpcChannels.GET_CONCURRENCY),
   getSettings: () => ipcRenderer.invoke(IpcChannels.SETTINGS_GET),
-  setSettings: (partial: Partial<AppSettings>) =>
+  setSettings: (partial: Partial<AppSettingsPublic>) =>
     ipcRenderer.invoke(IpcChannels.SETTINGS_SET, partial),
   setFfmpegBinDir: (dir: string) =>
     ipcRenderer.invoke(IpcChannels.FFMPEG_SET_BIN_DIR, dir),
@@ -286,6 +261,8 @@ const api: ElectronAPI = {
   getLanStatus: () => ipcRenderer.invoke(IpcChannels.LAN_GET_STATUS),
   setLanRemoteConfig: (config: LanRemoteConfigInput) =>
     ipcRenderer.invoke(IpcChannels.LAN_SET_CONFIG, config),
+  refreshLanPairCode: () =>
+    ipcRenderer.invoke(IpcChannels.LAN_REFRESH_PAIR_CODE),
   clearStoredTasks: () => ipcRenderer.invoke(IpcChannels.TASKS_CLEAR),
   resetSettings: () => ipcRenderer.invoke(IpcChannels.SETTINGS_RESET),
   getAppInfo: () => ipcRenderer.invoke(IpcChannels.APP_INFO),

@@ -84,20 +84,59 @@ const LAN_PASSWORD_MIN_LENGTH = 8
 /** 远程访问表单（本地编辑，点保存后提交） */
 const lanEnabled = ref(false)
 const lanPort = ref(17890)
-const lanBindHost = ref<'0.0.0.0' | '127.0.0.1'>('0.0.0.0')
+const lanBindHost = ref<'0.0.0.0' | '127.0.0.1'>('127.0.0.1')
 const lanUsername = ref('admin')
 const lanPassword = ref('')
 const lanPassword2 = ref('')
+const lanPairRefreshing = ref(false)
 
 function syncLanFormFromProps(): void {
   const s = props.lanStatus
   if (!s) return
   lanEnabled.value = s.enabled
   lanPort.value = s.port || 17890
-  lanBindHost.value = s.bindHost === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0'
+  lanBindHost.value = s.bindHost === '0.0.0.0' ? '0.0.0.0' : '127.0.0.1'
   lanUsername.value = s.username || 'admin'
   lanPassword.value = ''
   lanPassword2.value = ''
+}
+
+function formatPairExpires(ts: number | null | undefined): string {
+  if (!ts) return ''
+  try {
+    return new Date(ts).toLocaleTimeString()
+  } catch {
+    return ''
+  }
+}
+
+async function onRefreshPairCode(): Promise<void> {
+  lanPairRefreshing.value = true
+  try {
+    const status = await window.electronAPI.refreshLanPairCode()
+    emit('refreshLanStatus')
+    if (status.pairCode) {
+      ElMessage.success('配对码已刷新')
+    } else {
+      ElMessage.info('当前为仅本机绑定，无需配对码')
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    ElMessage.error(message || '刷新配对码失败')
+  } finally {
+    lanPairRefreshing.value = false
+  }
+}
+
+async function copyPairCode(): Promise<void> {
+  const code = props.lanStatus?.pairCode
+  if (!code) return
+  try {
+    await navigator.clipboard.writeText(code)
+    ElMessage.success('已复制配对码')
+  } catch {
+    ElMessage.error('复制失败')
+  }
 }
 
 watch(
@@ -118,13 +157,31 @@ watch(
   }
 )
 
-function onLanToggle(v: string | number | boolean): void {
+async function onLanToggle(v: string | number | boolean): Promise<void> {
   const enabled = Boolean(v)
-  // 开启时若无密码，提示先填密码再保存
+  // 开启时若无密码，阻止并强提示
   if (enabled && !props.lanStatus?.hasPassword && !lanPassword.value) {
     lanEnabled.value = false
-    ElMessage.warning('首次开启请先设置密码，再点击「保存远程设置」')
+    ElMessage.warning(
+      `未设置密码，无法开启远程访问。请先填写至少 ${LAN_PASSWORD_MIN_LENGTH} 位强密码，再点击「保存远程设置」`
+    )
     return
+  }
+  if (enabled && lanBindHost.value === '0.0.0.0') {
+    try {
+      await ElMessageBox.confirm(
+        '即将绑定局域网（0.0.0.0）：同网段设备均可访问，通信为 HTTP 明文。登录除密码外还需桌面显示的配对码。确定继续？',
+        '安全确认',
+        {
+          type: 'warning',
+          confirmButtonText: '仍要开启局域网',
+          cancelButtonText: '取消'
+        }
+      )
+    } catch {
+      lanEnabled.value = false
+      return
+    }
   }
   lanEnabled.value = enabled
   emit('saveLanConfig', {
@@ -136,7 +193,7 @@ function onLanToggle(v: string | number | boolean): void {
   })
 }
 
-function onSaveLan(): void {
+async function onSaveLan(): Promise<void> {
   if (lanPassword.value || lanPassword2.value) {
     if (lanPassword.value.length < LAN_PASSWORD_MIN_LENGTH) {
       ElMessage.warning(`密码至少 ${LAN_PASSWORD_MIN_LENGTH} 位`)
@@ -148,8 +205,25 @@ function onSaveLan(): void {
     }
   }
   if (lanEnabled.value && !props.lanStatus?.hasPassword && !lanPassword.value) {
-    ElMessage.warning('开启远程访问前请设置密码')
+    ElMessage.warning(
+      `开启远程访问前必须设置至少 ${LAN_PASSWORD_MIN_LENGTH} 位密码（未设密码将拒绝启动服务）`
+    )
     return
+  }
+  if (lanEnabled.value && lanBindHost.value === '0.0.0.0') {
+    try {
+      await ElMessageBox.confirm(
+        '当前将绑定局域网地址：同网段可访问、HTTP 明文，登录需配对码。更安全可选「仅本机」127.0.0.1。确定保存？',
+        '安全确认',
+        {
+          type: 'warning',
+          confirmButtonText: '仍要保存',
+          cancelButtonText: '取消'
+        }
+      )
+    } catch {
+      return
+    }
   }
   const port = Math.max(1024, Math.min(65535, Math.floor(Number(lanPort.value) || 17890)))
   lanPort.value = port
@@ -532,9 +606,56 @@ function onPathKeydown(e: KeyboardEvent): void {
           <div class="setting-field">
             <label>绑定网卡</label>
             <el-radio-group v-model="lanBindHost" size="small">
+              <el-radio-button value="127.0.0.1">仅本机（推荐）</el-radio-button>
               <el-radio-button value="0.0.0.0">局域网</el-radio-button>
-              <el-radio-button value="127.0.0.1">仅本机</el-radio-button>
             </el-radio-group>
+            <p class="setting-hint lan-bind-hint">
+              推荐「仅本机」（127.0.0.1）本机调试；「局域网」时同网段均可访问，且登录需配对码。
+            </p>
+          </div>
+          <div
+            v-if="lanBindHost === '0.0.0.0'"
+            class="setting-warn-block"
+            role="note"
+          >
+            <strong>安全提示</strong>
+            绑定 0.0.0.0 时，同一局域网内设备均可尝试访问；通信为
+            HTTP 明文（Cookie 无法使用 Secure）。请使用至少
+            {{ LAN_PASSWORD_MIN_LENGTH }}
+            位强密码，并核对下方配对码；勿在公共 Wi‑Fi 开启；更安全时可改为「仅本机」。
+          </div>
+          <div
+            v-if="lanStatus?.pairCodeRequired"
+            class="setting-field lan-pair-block"
+          >
+            <label>登录配对码</label>
+            <div class="lan-pair-row">
+              <code class="lan-pair-code">{{ lanStatus?.pairCode || '—' }}</code>
+              <el-button
+                size="small"
+                :disabled="!lanStatus?.pairCode"
+                @click="copyPairCode"
+              >
+                复制
+              </el-button>
+              <el-button
+                size="small"
+                :loading="lanPairRefreshing"
+                :disabled="!lanStatus?.running"
+                @click="onRefreshPairCode"
+              >
+                刷新
+              </el-button>
+            </div>
+            <p class="setting-hint">
+              手机/其他设备登录时需填写此码（仅内存，约 10 分钟有效）。
+              <template v-if="lanStatus?.pairCodeExpiresAt">
+                过期时间：{{ formatPairExpires(lanStatus.pairCodeExpiresAt) }}
+              </template>
+              <template v-else-if="!lanStatus?.running">
+                服务未运行时无有效配对码。
+              </template>
+            </p>
           </div>
           <div class="setting-field">
             <label>用户名</label>
@@ -612,7 +733,7 @@ function onPathKeydown(e: KeyboardEvent): void {
             </el-tooltip>
           </div>
           <p class="setting-hint">
-            绑定局域网时同网段设备均可尝试访问；勿在公共 Wi‑Fi 开启。关闭远程或改密将清除会话。
+            服务使用 HTTP 明文（会话 Cookie 含 HttpOnly，因非 HTTPS 不加 Secure）。关闭远程或改密将清除会话。
           </p>
         </div>
       </el-tab-pane>
@@ -960,6 +1081,46 @@ function onPathKeydown(e: KeyboardEvent): void {
   color: var(--danger);
   line-height: 1.5;
   word-break: break-word;
+}
+
+.setting-warn-block {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in oklch, var(--warning, #e6a23c) 40%, var(--border));
+  background: color-mix(in oklch, var(--warning, #e6a23c) 12%, var(--bg));
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.setting-warn-block strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--warning, #e6a23c);
+}
+
+.lan-bind-hint {
+  margin: 6px 0 0;
+}
+
+.lan-pair-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lan-pair-code {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-soft, var(--bg));
+  user-select: all;
 }
 
 .setting-row.actions {

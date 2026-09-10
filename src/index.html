@@ -3,13 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'"
       http-equiv="Content-Security-Policy"
     />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <link href="./favicon.ico" rel="icon" type="image/x-icon" />
     <link href="./favicon.png" rel="icon" type="image/png" />
-    <title>轻影</title>
+    <!-- 与 shared/brand.ts 的 PRODUCT_NAME 同源；构建时由 electron.vite 注入 -->
+    <title>__PRODUCT_NAME__</title>
   </head>
   <body>
     <div id="app"></div>

@@ -68,8 +68,10 @@
 
   const FILE_PLACEHOLDER = '点击或拖拽文件到此处'
   const THEME_KEY = 'qy-lan-theme'
+  const CRED_KEY = 'qy-lan-creds'
   let pollTimer = null
   let authenticated = false
+  let loadTasksFailStreak = 0
 
   function readStoredTheme() {
     try {
@@ -77,6 +79,55 @@
       return t === 'light' || t === 'dark' ? t : 'dark'
     } catch {
       return 'dark'
+    }
+  }
+
+  function readStoredCreds() {
+    try {
+      const raw = localStorage.getItem(CRED_KEY)
+      if (!raw) return null
+      const obj = JSON.parse(raw)
+      if (!obj || typeof obj !== 'object') return null
+      const username = typeof obj.u === 'string' ? obj.u : ''
+      const password = typeof obj.p === 'string' ? obj.p : ''
+      if (!username && !password) return null
+      return { username, password }
+    } catch {
+      return null
+    }
+  }
+
+  function saveStoredCreds(username, password) {
+    try {
+      localStorage.setItem(
+        CRED_KEY,
+        JSON.stringify({ u: String(username || ''), p: String(password || '') })
+      )
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }
+
+  function clearStoredCreds() {
+    try {
+      localStorage.removeItem(CRED_KEY)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function fillLoginFromStoredCreds() {
+    const creds = readStoredCreds()
+    const userEl = $('login-user')
+    const passEl = $('login-pass')
+    const rememberEl = $('login-remember')
+    if (!userEl || !passEl) return
+    if (creds) {
+      userEl.value = creds.username
+      passEl.value = creds.password
+      if (rememberEl) rememberEl.checked = true
+    } else if (rememberEl) {
+      rememberEl.checked = false
     }
   }
 
@@ -133,14 +184,50 @@
       clearInterval(pollTimer)
       pollTimer = null
     }
+    fillLoginFromStoredCreds()
+  }
+
+  function setWhoami(username) {
+    const name = username ? String(username) : '已登录'
+    const avatar = $('whoami-avatar')
+    const nameEl = $('whoami-name')
+    if (nameEl) nameEl.textContent = name
+    if (avatar) {
+      const ch = username ? String(username).trim().charAt(0) : '管'
+      avatar.textContent = ch || '管'
+    }
+    if (whoami) {
+      whoami.title = username ? `已登录：${username}` : '已登录'
+      if (!nameEl && !avatar) whoami.textContent = name
+    }
+  }
+
+  function syncModeOptionSelection() {
+    const mode = optMode ? optMode.value : 'compress'
+    document.querySelectorAll('.mode-option').forEach((el) => {
+      const input = el.querySelector('input[name="process-mode"]')
+      const on = Boolean(input && input.value === mode)
+      el.classList.toggle('is-selected', on)
+      if (input) input.checked = on
+    })
+  }
+
+  function setCollapseOpen(el, open) {
+    if (!el) return
+    const shouldOpen = Boolean(open)
+    el.classList.toggle('is-open', shouldOpen)
+    el.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true')
+    el.querySelectorAll('input, select, textarea, button').forEach((node) => {
+      if (shouldOpen) node.removeAttribute('tabindex')
+      else node.setAttribute('tabindex', '-1')
+    })
   }
 
   function showMain(username) {
     authenticated = true
     viewLogin.hidden = true
     viewMain.hidden = false
-    whoami.textContent = username ? username : '已登录'
-    whoami.title = username ? `已登录：${username}` : '已登录'
+    setWhoami(username)
     syncModeUi()
     void loadTasks()
     if (pollTimer) clearInterval(pollTimer)
@@ -166,6 +253,7 @@
     const video = !audio && !image
     const custom = optPreset.value === 'custom'
     const imageCustom = optImagePreset && optImagePreset.value === 'custom'
+    syncModeOptionSelection()
 
     if (wrapPreset) wrapPreset.hidden = image
     if (wrapImagePreset) wrapImagePreset.hidden = !image
@@ -173,14 +261,13 @@
     wrapMaxedge.hidden = !video
     wrapAformat.hidden = !audio
     wrapAbitrate.hidden = !audio
-    if (wrapIformat) wrapIformat.hidden = !image || !imageCustom
-    if (wrapIquality) wrapIquality.hidden = !image || !imageCustom
-    if (wrapImaxedge) wrapImaxedge.hidden = !image || !imageCustom
-    if (wrapIstrip) wrapIstrip.hidden = !image || !imageCustom
+    if (wrapIformat) wrapIformat.hidden = false
+    if (wrapIquality) wrapIquality.hidden = false
+    if (wrapImaxedge) wrapImaxedge.hidden = false
+    if (wrapIstrip) wrapIstrip.hidden = false
 
-    if (customOpts) {
-      customOpts.hidden = !video || !custom
-    }
+    setCollapseOpen(customOpts, video && custom)
+    setCollapseOpen($('image-custom-opts'), image && imageCustom)
 
     if (fileInput) {
       fileInput.accept = ACCEPT_BY_MODE[mode] || ACCEPT_BY_MODE.compress
@@ -245,6 +332,15 @@
     return { res, data }
   }
 
+  function syncPairCodeField(required) {
+    const wrap = $('login-pair-wrap')
+    const input = $('login-pair')
+    if (!wrap || !input) return
+    wrap.hidden = !required
+    input.required = Boolean(required)
+    if (!required) input.value = ''
+  }
+
   async function checkStatus() {
     try {
       const { data } = await api('/api/status')
@@ -252,6 +348,7 @@
         if (data.maxUploadMb) {
           uploadHint.textContent = `单文件上限约 ${data.maxUploadMb} MB；编码器与输出目录使用本机设置`
         }
+        syncPairCodeField(Boolean(data.pairCodeRequired))
         if (data.authenticated) {
           showMain(data.username)
         } else {
@@ -270,18 +367,32 @@
     try {
       const username = $('login-user').value.trim()
       const password = $('login-pass').value
+      const pairWrap = $('login-pair-wrap')
+      const pairInput = $('login-pair')
+      const needPair = pairWrap && !pairWrap.hidden
+      const body = { username, password }
+      if (needPair) {
+        body.pairCode = pairInput ? pairInput.value.trim() : ''
+      }
       const { res, data } = await api('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify(body)
       })
       if (!res.ok || !data || !data.ok) {
         loginError.textContent =
           (data && data.error) || `登录失败 (${res.status})`
         loginError.hidden = false
+        if (data && data.pairCodeRequired) syncPairCodeField(true)
         return
       }
-      $('login-pass').value = ''
+      const rememberEl = $('login-remember')
+      if (rememberEl && rememberEl.checked) saveStoredCreds(username, password)
+      else clearStoredCreds()
+      if (!(rememberEl && rememberEl.checked)) {
+        $('login-pass').value = ''
+      }
+      if (pairInput) pairInput.value = ''
       showMain(data.username || username)
     } catch (err) {
       loginError.textContent = err.message || '网络错误'
@@ -303,6 +414,14 @@
   optMode.addEventListener('change', () => {
     if (optMode.value === 'image') applyImagePresetDefaults()
     else syncModeUi()
+  })
+
+  document.querySelectorAll('input[name="process-mode"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (!radio.checked || !optMode) return
+      optMode.value = radio.value
+      optMode.dispatchEvent(new Event('change', { bubbles: true }))
+    })
   })
   optPreset.addEventListener('change', applyPresetDefaults)
   if (optImagePreset) {
@@ -386,10 +505,10 @@
     if (!tasks || tasks.length === 0) {
       taskBody.innerHTML = `<tr class="empty-row">
         <td colspan="5">
-          <div class="empty-state">
+          <div class="empty-state queue-empty">
             <div class="empty-icon" aria-hidden="true">◇</div>
             <p>暂无任务</p>
-            <span class="muted">从左侧投递文件后显示在这里</span>
+            <span class="muted">从左侧投递文件后，本机将排队处理并在此显示进度。</span>
           </div>
         </td>
       </tr>`
@@ -410,7 +529,7 @@
             ? `<div class="task-file-err">${escapeHtml(t.error)}</div>`
             : ''
         const dl = t.downloadable
-          ? `<a class="btn sm primary" href="/api/tasks/${encodeURIComponent(t.id)}/download">下载</a>`
+          ? `<a class="btn sm ghost" href="/api/tasks/${encodeURIComponent(t.id)}/download">下载</a>`
           : '<span class="muted">—</span>'
         const modeTag = modeLabel(t.mode)
           ? `<span class="mode-tag ${modeClass(t.mode)}">${escapeHtml(modeLabel(t.mode))}</span>`
@@ -436,7 +555,7 @@
           <td class="pct-cell">
             <div class="pct-wrap">
               <span class="pct-text">${pctText}</span>
-              <div class="pct-track"><div class="pct-fill${t.status === 'completed' ? ' is-done' : ''}" style="width:${fillW}%"></div></div>
+              <div class="pct-track"><div class="pct-fill${t.status === 'completed' ? ' is-done' : t.status === 'failed' ? ' is-fail' : ''}" style="width:${fillW}%"></div></div>
             </div>
           </td>
           <td class="size-cell">${size}</td>
@@ -454,6 +573,16 @@
       .replace(/"/g, '&quot;')
   }
 
+  function setTasksPollWarn(show) {
+    const sub = document.querySelector('.card-tasks .card-sub')
+    if (!sub) return
+    if (!sub.dataset.defaultSub) sub.dataset.defaultSub = sub.textContent || ''
+    sub.textContent = show
+      ? '刷新失败，将自动重试'
+      : sub.dataset.defaultSub
+    sub.classList.toggle('is-warn', Boolean(show))
+  }
+
   async function loadTasks() {
     if (!authenticated) return
     try {
@@ -463,10 +592,16 @@
         return
       }
       if (data && data.ok) {
+        loadTasksFailStreak = 0
+        setTasksPollWarn(false)
         renderTasks(data.tasks || [])
+        return
       }
+      loadTasksFailStreak += 1
+      if (loadTasksFailStreak >= 3) setTasksPollWarn(true)
     } catch {
-      // 静默
+      loadTasksFailStreak += 1
+      if (loadTasksFailStreak >= 3) setTasksPollWarn(true)
     }
   }
 
@@ -573,10 +708,27 @@
   const lightboxImg = $('thumb-lightbox-img')
   const lightboxTitle = $('thumb-lightbox-title')
   const lightboxLoading = $('thumb-lightbox-loading')
+  const lightboxCloseBtn = $('thumb-lightbox-x')
+  const lightboxPanel = lightbox
+    ? lightbox.querySelector('.thumb-lightbox-panel')
+    : null
   const previewCache = Object.create(null)
+  let lightboxReturnFocus = null
+
+  function getLightboxFocusables() {
+    if (!lightboxPanel) return []
+    const nodes = lightboxPanel.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )
+    return Array.prototype.filter.call(nodes, (el) => {
+      if (el.hidden || el.getAttribute('aria-hidden') === 'true') return false
+      const style = window.getComputedStyle(el)
+      return style.display !== 'none' && style.visibility !== 'hidden'
+    })
+  }
 
   function closeLightbox() {
-    if (!lightbox) return
+    if (!lightbox || lightbox.hidden) return
     lightbox.hidden = true
     document.body.classList.remove('lightbox-open')
     if (lightboxImg) {
@@ -587,10 +739,25 @@
       lightboxLoading.hidden = true
       lightboxLoading.classList.remove('is-error')
     }
+    const restore = lightboxReturnFocus
+    lightboxReturnFocus = null
+    if (restore && typeof restore.focus === 'function') {
+      try {
+        restore.focus()
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
-  function openLightbox(taskId, fileName) {
+  function openLightbox(taskId, fileName, triggerEl) {
     if (!lightbox || !taskId) return
+    lightboxReturnFocus =
+      triggerEl && typeof triggerEl.focus === 'function'
+        ? triggerEl
+        : document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null
     lightbox.hidden = false
     document.body.classList.add('lightbox-open')
     if (lightboxTitle) lightboxTitle.textContent = fileName || '预览'
@@ -601,6 +768,15 @@
     if (lightboxLoading) {
       lightboxLoading.hidden = false
       lightboxLoading.classList.remove('is-error')
+    }
+
+    const focusTarget = lightboxCloseBtn || getLightboxFocusables()[0]
+    if (focusTarget && typeof focusTarget.focus === 'function') {
+      try {
+        focusTarget.focus()
+      } catch {
+        /* ignore */
+      }
     }
 
     const thumbSrc = '/api/tasks/' + encodeURIComponent(taskId) + '/thumbnail'
@@ -648,7 +824,11 @@
         : null
       if (!btn || btn.classList.contains('is-fail')) return
       e.preventDefault()
-      openLightbox(btn.getAttribute('data-preview-id'), btn.getAttribute('data-preview-name'))
+      openLightbox(
+        btn.getAttribute('data-preview-id'),
+        btn.getAttribute('data-preview-name'),
+        btn
+      )
     })
   }
 
@@ -658,10 +838,39 @@
   })
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && lightbox && !lightbox.hidden) {
+    if (!lightbox || lightbox.hidden) return
+    if (e.key === 'Escape') {
+      e.preventDefault()
       closeLightbox()
+      return
+    }
+    if (e.key !== 'Tab') return
+    const focusables = getLightboxFocusables()
+    if (!focusables.length) {
+      e.preventDefault()
+      return
+    }
+    const first = focusables[0]
+    const last = focusables[focusables.length - 1]
+    const active = document.activeElement
+    if (e.shiftKey) {
+      if (active === first || !lightboxPanel || !lightboxPanel.contains(active)) {
+        e.preventDefault()
+        last.focus()
+      }
+    } else if (active === last || !lightboxPanel || !lightboxPanel.contains(active)) {
+      e.preventDefault()
+      first.focus()
     }
   })
 
+  const loginRemember = $('login-remember')
+  if (loginRemember) {
+    loginRemember.addEventListener('change', () => {
+      if (!loginRemember.checked) clearStoredCreds()
+    })
+  }
+
+  fillLoginFromStoredCreds()
   void checkStatus()
 })()

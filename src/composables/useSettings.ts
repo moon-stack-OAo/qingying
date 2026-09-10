@@ -10,6 +10,7 @@ import {
   DEFAULT_MOSAIC_NAME_TEMPLATE,
   DEFAULT_NAME_TEMPLATE,
   type AppSettings,
+  type AppSettingsPublic,
   type AspectRatioId,
   type AudioFormat,
   type CloseAction,
@@ -602,7 +603,7 @@ export function useSettings(options: UseSettingsOptions = {}) {
   }
 
   /** 用一份设置快照覆盖全部 ref（loadSettings / 重置后复用） */
-  function applyLoadedSettings(s: AppSettings): void {
+  function applyLoadedSettings(s: AppSettingsPublic): void {
     outputDir.value = s.outputDir || ''
     presetId.value = s.presetId || 'standard'
     encoder.value = s.encoder || 'auto'

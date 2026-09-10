@@ -7,6 +7,7 @@ import {
   normalizeTasksForRestore,
   serializeTasksForPersist
 } from '../../shared/taskNormalize'
+import { isUncPath } from '../../shared/pathUtils'
 
 function tasksFilePath(): string {
   return path.join(app.getPath('userData'), 'tasks.json')
@@ -35,6 +36,8 @@ export function loadTasks(opts?: {
 
     return normalizeTasksForRestore(list, {
       inputExists: (p) => {
+        // UNC 上同步 existsSync 可能挂死主进程；恢复时跳过探测，交由入队/启动异步校验
+        if (isUncPath(p)) return true
         try {
           return fs.existsSync(p)
         } catch {

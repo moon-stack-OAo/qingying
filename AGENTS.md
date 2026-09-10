@@ -51,9 +51,9 @@ npm run dist:mac     # 需在 macOS 上执行
 |--------|--------------------------------------------------------------------------------|
 | 安全基线   | `contextIsolation: true`，`nodeIntegration: false`，`sandbox: true`              |
 | IPC    | 使用 `handleFromMainWindow`（`ipcGuard.ts`）校验 sender 为主窗口；勿随意改回裸 `ipcMain.handle` |
-| 路径     | 用户可选路径走 `pathAllowlist`；禁止路径穿越；局域网静态资源用 `safeJoinUnderRoot`                    |
+| 路径     | 用户可选路径走 `pathAllowlist`；禁止路径穿越；局域网静态资源用 `safeJoinUnderRoot`。`allowPath(file)` **仅**登记精确文件，不再放开父目录；sidecar / 打开输出靠 `allowOutputPath` 显式登记；选目录与 `outputDir` / userData 仍 `allowDir` 整树放行。同目录未选中邻接文件的读预览会失败（预期） |
 | 任务     | `taskQueue` 并发 1–4；进度按 taskId 推送；任务列表可持久化（`taskStore` + `taskNormalize`）       |
-| FFmpeg | 参数拼装在 `shared/ffmpegLogic.ts`；实际执行在 `electron/main/ffmpeg/`                    |
+| FFmpeg | 参数拼装在 `shared/ffmpegLogic.ts`（使用 Node `path`，**勿打进纯浏览器包**）；实际执行在 `electron/main/ffmpeg/` |
 | 图片     | Sharp 为主；Magick 为可选引擎；逻辑在 `shared/imageLogic.ts` + `electron/main/image/`      |
 | 打码     | 默认滤镜一次编码；可选逐帧流水线（抽帧 → Sharp → 封装）                                              |
 | 更新     | electron-updater + GitHub Releases；`npm run dev` 不查真实更新                        |
@@ -67,7 +67,7 @@ npm run dist:mac     # 需在 macOS 上执行
 - **Element Plus**：沿用现有中文 locale 与主题（含暗色）模式，勿引入第二套 UI 库。
 - **错误**：ffmpeg/业务错误经 `shared/errorMap.ts` 映射为用户可读中文；硬件失败可回退软件编码。
 - **注释**：仅在非显而易见处添加；不要为改动堆砌解释性注释。
-- **依赖**：新增 npm 包前确认必要性；主进程 native 依赖需考虑 `electron-builder` / `asarUnpack` 与 `postinstall`。
+- **依赖**：新增 npm 包前确认必要性；主进程 native 依赖需考虑 `electron-builder` / `asarUnpack` 与 `postinstall`。改 native / 二进制包时同步核对 `electron-builder.yml` 的 `asarUnpack`（当前含 `ffmpeg-static`、`@ffprobe-installer`、`sharp`、`@img`）。
 - **测试**：纯函数与边界逻辑写在 `tests/*.test.ts`；别名 `@shared` 指向 `shared/`（见 `vitest.config.ts`）。
 
 ## 安全与密钥

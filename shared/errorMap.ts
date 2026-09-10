@@ -1,3 +1,56 @@
+/** 取路径末段文件名（不依赖 path 模块，兼容 Windows / Unix） */
+function pathBasename(p: string): string {
+  const norm = String(p || '').replace(/\\/g, '/')
+  const parts = norm.split('/').filter(Boolean)
+  return parts[parts.length - 1] || p
+}
+
+/**
+ * 将文案中的绝对路径替换为 basename，避免错误信息泄露完整用户路径。
+ * 优先替换 knownPaths，再做通用盘符 / UNC / Unix 绝对路径匹配。
+ */
+export function redactPathsInText(
+  text: string,
+  knownPaths?: Array<string | undefined | null>
+): string {
+  let out = String(text || '')
+  if (!out) return out
+
+  const known = (knownPaths || [])
+    .filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+    .map((p) => p.trim())
+    .sort((a, b) => b.length - a.length)
+
+  for (const p of known) {
+    const base = pathBasename(p)
+    if (!base || base === p) continue
+    const variants = Array.from(
+      new Set([p, p.replace(/\\/g, '/'), p.replace(/\//g, '\\')])
+    )
+    for (const v of variants) {
+      if (v.length < 2) continue
+      if (out.includes(v)) {
+        out = out.split(v).join(base)
+      }
+    }
+  }
+
+  // Windows: C:\foo\bar 或 C:/foo/bar
+  out = out.replace(
+    /[A-Za-z]:[\\/](?:[^\s"'`<>|\n\r]+[\\/])*[^\s"'`<>|\n\r]+/g,
+    (m) => pathBasename(m)
+  )
+  // UNC: \\server\share\...
+  out = out.replace(/\\\\[^\s"'`<>|\n\r]+/g, (m) => pathBasename(m))
+  // Unix 绝对路径（保留前导分隔/引号等）
+  out = out.replace(
+    /(^|[\s"'=:])(\/(?:[^\s"'`<>|\n\r]+\/)*[^\s"'`<>|\n\r]+)/g,
+    (_m, pre: string, p: string) => pre + pathBasename(p)
+  )
+
+  return out
+}
+
 /**
  * 将 ffmpeg 原始错误映射为用户可读的中文短句
  * 按优先级匹配 stderr/消息关键字
@@ -10,7 +63,10 @@ export function mapFfmpegError(
     outputPath?: string
   }
 ): string {
-  const text = (raw || '').trim()
+  const text = redactPathsInText((raw || '').trim(), [
+    ctx?.inputPath,
+    ctx?.outputPath
+  ])
   const lower = text.toLowerCase()
 
   // 输入不存在

@@ -7,7 +7,7 @@ import { IpcChannels } from '../shared/types'
  * IPC 通道对账（建议级）
  * - 完整：IpcChannels ↔ ElectronAPI 方法语义映射（types 层）
  * - 静态：preload invoke/on 与 main handleFromMainWindow / ipcMain.on 引用的通道值
- * 说明：main 注册分散在 index.ts / updater.ts；FILES_DROPPED_FROM_PRELOAD 用 ipcMain.on。
+ * 说明：main 注册分散在 index.ts / updater.ts / ipc/*.ts；FILES_DROPPED_FROM_PRELOAD 用 ipcMain.on。
  * 本测不做 AST，字符串包含即可；漏注册会在差集中暴露。
  */
 
@@ -37,6 +37,7 @@ const API_TO_CHANNEL: Record<string, keyof typeof IpcChannels | null> = {
   getImageDataUrl: 'IMAGE_GET_DATA_URL',
   extractVideoFrame: 'VIDEO_EXTRACT_FRAME',
   getLanStatus: 'LAN_GET_STATUS',
+  refreshLanPairCode: 'LAN_REFRESH_PAIR_CODE',
   setLanRemoteConfig: 'LAN_SET_CONFIG',
   clearStoredTasks: 'TASKS_CLEAR',
   resetSettings: 'SETTINGS_RESET',
@@ -93,6 +94,7 @@ const INVOKE_OR_ON_FROM_RENDERER: Array<keyof typeof IpcChannels> = [
   'IMAGE_GET_DATA_URL',
   'VIDEO_EXTRACT_FRAME',
   'LAN_GET_STATUS',
+  'LAN_REFRESH_PAIR_CODE',
   'LAN_SET_CONFIG',
   'TASKS_CLEAR',
   'APP_INFO',
@@ -188,7 +190,15 @@ describe('IPC 通道对账', () => {
     const preload = readSrc('electron/preload/index.ts')
     const mainIndex = readSrc('electron/main/index.ts')
     const updater = readSrc('electron/main/updater.ts')
-    const mainCombined = `${mainIndex}\n${updater}`
+    const ipcModules = [
+      'electron/main/ipc/index.ts',
+      'electron/main/ipc/dialog.ts',
+      'electron/main/ipc/settings.ts',
+      'electron/main/ipc/media.ts',
+      'electron/main/ipc/shell.ts',
+      'electron/main/ipc/app.ts'
+    ].map((p) => readSrc(p))
+    const mainCombined = [mainIndex, updater, ...ipcModules].join('\n')
 
     const preloadRefs = channelLiteralRefs(preload)
     const mainRefs = channelLiteralRefs(mainCombined)

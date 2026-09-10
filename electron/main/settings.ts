@@ -62,7 +62,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   mosaicFrameByFrame: false,
   lanRemoteEnabled: false,
   lanPort: 17890,
-  lanBindHost: '0.0.0.0',
+  lanBindHost: '127.0.0.1',
   lanUsername: 'admin',
   lanPasswordHash: ''
 }

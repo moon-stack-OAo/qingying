@@ -41,28 +41,60 @@
     </div>
 
     <!-- 登录 -->
-    <section id="view-login" class="view">
+    <section id="view-login" class="view view-login">
       <div aria-hidden="true" class="login-bg"></div>
       <div class="card login-card">
-        <div class="brand">
-          <div class="brand-mark">轻</div>
-          <div>
-            <h1>轻影</h1>
-            <p class="muted">局域网远程压缩</p>
-          </div>
+        <div class="login-brand">
+          <div class="brand-mark" aria-hidden="true">轻</div>
+          <h1 class="login-brand__title">轻影</h1>
+          <p class="login-brand__sub">局域网远程压缩</p>
         </div>
-        <form id="login-form">
-          <label>
-            <span>用户名</span>
-            <input id="login-user" autocomplete="username" placeholder="admin" required type="text" />
-          </label>
-          <label>
-            <span>密码</span>
-            <input id="login-pass" autocomplete="current-password" placeholder="请输入密码" required type="password" />
+        <form id="login-form" class="form-stack">
+          <div class="field">
+            <label class="field__label" for="login-user">用户名</label>
+            <input
+              id="login-user"
+              class="input"
+              autocomplete="username"
+              placeholder="admin"
+              required
+              type="text"
+            />
+          </div>
+          <div class="field">
+            <label class="field__label" for="login-pass">密码</label>
+            <input
+              id="login-pass"
+              class="input"
+              autocomplete="current-password"
+              placeholder="请输入密码"
+              required
+              type="password"
+            />
+          </div>
+          <div class="field" id="login-pair-wrap" hidden>
+            <label class="field__label" for="login-pair">配对码</label>
+            <input
+              id="login-pair"
+              class="input"
+              autocomplete="one-time-code"
+              placeholder="在电脑版轻影设置中查看"
+              type="text"
+              maxlength="8"
+              spellcheck="false"
+            />
+            <p class="field__hint login-pair-hint">
+              绑定局域网时需填写电脑版「设置 → 远程访问」中的 6 位配对码
+            </p>
+          </div>
+          <label class="login-remember" for="login-remember">
+            <input id="login-remember" type="checkbox" />
+            <span>记住用户名和密码</span>
           </label>
           <p id="login-error" class="error" hidden></p>
           <button type="submit" class="btn primary" id="login-btn">登录</button>
         </form>
+        <p class="login-footer-hint">仅限同一局域网访问本机轻影服务，请确保电脑版已开启远程。</p>
       </div>
     </section>
 
@@ -70,14 +102,14 @@
     <section id="view-main" class="view view-main" hidden>
       <div class="main-bg" aria-hidden="true"></div>
       <header class="topbar">
-        <div class="brand-inline">
-          <span class="brand-mark sm">轻</span>
-          <div class="brand-text">
-            <span class="brand-title">轻影远程</span>
-            <span class="brand-sub">局域网投递 · 压缩 · 下载</span>
+        <div class="topbar__brand">
+          <span class="brand-mark sm topbar__mark" aria-hidden="true">轻</span>
+          <div class="topbar__titles">
+            <span class="topbar__name">轻影远程</span>
+            <span class="topbar__tagline">局域网投递 · 压缩 · 下载</span>
           </div>
         </div>
-        <div class="topbar-actions">
+        <div class="topbar__actions">
           <button
             id="btn-theme"
             aria-label="切换浅色主题"
@@ -93,13 +125,15 @@
               <path d="M19.5 13.2A7.5 7.5 0 1 1 10.8 4.5 6.2 6.2 0 0 0 19.5 13.2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
             </svg>
           </button>
-          <span id="whoami" class="user-chip"></span>
+          <div id="whoami" class="user-chip" title="已登录">
+            <span class="user-chip__avatar" id="whoami-avatar" aria-hidden="true">管</span>
+            <span class="user-chip__name" id="whoami-name">已登录</span>
+          </div>
           <button id="btn-logout" class="btn ghost btn-logout" type="button">退出</button>
         </div>
       </header>
 
       <main class="main">
-        <!-- 顶栏：标题 + 统计 -->
         <div class="workbench-header">
           <div class="page-intro">
             <h1 class="page-title">工作台</h1>
@@ -126,20 +160,19 @@
           </div>
         </div>
 
-        <!-- 双栏：左投递 / 右队列 -->
         <div class="workbench">
           <aside class="workbench-side">
-            <div class="card card-upload">
-              <div class="card-head">
+            <div class="card card-upload panel">
+              <div class="card-head panel__head">
                 <div class="card-title-wrap">
                   <span class="card-icon" aria-hidden="true">↑</span>
                   <div>
-                    <h2>投递任务</h2>
+                    <h2 class="panel__title">投递任务</h2>
                     <p class="card-sub">选择文件与参数</p>
                   </div>
                 </div>
               </div>
-              <form id="upload-form" class="upload-form">
+              <form id="upload-form" class="upload-form panel__body">
                 <label class="dropzone" id="dropzone">
                   <input
                     id="file-input"
@@ -161,17 +194,41 @@
                   </div>
                 </label>
 
-                <div class="opts-block">
-                  <div class="opts-label">处理参数</div>
-                  <div class="grid">
-                    <label>
-                      <span>模式</span>
-                      <select id="opt-mode">
-                        <option value="compress">视频压缩</option>
-                        <option value="audio">仅抽取音频</option>
-                        <option value="image">图片压缩</option>
-                      </select>
+                <div class="opts-block opts-block--mode">
+                  <div class="opts-label">处理模式</div>
+                  <div class="mode-group" role="radiogroup" aria-label="处理模式">
+                    <label class="mode-option is-selected">
+                      <input type="radio" name="process-mode" value="compress" checked />
+                      <span class="mode-option__text">
+                        <strong>视频压缩</strong>
+                        <span>降低体积，保留画质</span>
+                      </span>
                     </label>
+                    <label class="mode-option">
+                      <input type="radio" name="process-mode" value="audio" />
+                      <span class="mode-option__text">
+                        <strong>抽音频</strong>
+                        <span>提取音轨并转码</span>
+                      </span>
+                    </label>
+                    <label class="mode-option">
+                      <input type="radio" name="process-mode" value="image" />
+                      <span class="mode-option__text">
+                        <strong>图片压缩</strong>
+                        <span>JPG / PNG / WebP</span>
+                      </span>
+                    </label>
+                  </div>
+                  <select id="opt-mode" class="mode-select-bridge" aria-hidden="true" tabindex="-1">
+                    <option value="compress" selected>视频压缩</option>
+                    <option value="audio">仅抽取音频</option>
+                    <option value="image">图片压缩</option>
+                  </select>
+                </div>
+
+                <div class="opts-block opts-block--base">
+                  <div class="opts-label">基础参数</div>
+                  <div class="grid">
                     <label id="wrap-preset">
                       <span>预设</span>
                       <select id="opt-preset">
@@ -230,83 +287,104 @@
                         <option value="320k">320k</option>
                       </select>
                     </label>
-                    <label id="wrap-iformat" hidden>
-                      <span>图片格式</span>
-                      <select id="opt-iformat">
-                        <option value="jpeg">JPEG</option>
-                        <option value="png">PNG</option>
-                        <option value="webp">WebP</option>
-                        <option value="keep">保持原格式</option>
-                      </select>
-                    </label>
-                    <label id="wrap-iquality" hidden>
-                      <span>质量（1–100）</span>
-                      <input
-                        id="opt-iquality"
-                        inputmode="numeric"
-                        max="100"
-                        min="1"
-                        placeholder="80"
-                        step="1"
-                        type="number"
-                        value="80"
-                      />
-                    </label>
-                    <label id="wrap-imaxedge" hidden>
-                      <span>最长边</span>
-                      <input
-                        id="opt-imaxedge"
-                        inputmode="numeric"
-                        max="16000"
-                        min="0"
-                        placeholder="0=不缩放"
-                        step="1"
-                        type="number"
-                        value="1920"
-                      />
-                    </label>
-                    <label id="wrap-istrip" class="check-row" hidden>
-                      <span>去除元数据</span>
-                      <input id="opt-istrip" checked type="checkbox" />
-                    </label>
                   </div>
                   <p id="preset-hint" class="opts-hint muted"></p>
                 </div>
 
-                <!-- 自定义预设：少量高级参数 -->
-                <div id="custom-opts" class="opts-block opts-custom" hidden>
-                  <div class="opts-label">自定义参数</div>
-                  <div class="grid">
-                    <label id="wrap-crf">
-                      <span>CRF 质量（越小越高清）</span>
-                      <input
-                        id="opt-crf"
-                        type="number"
-                        inputmode="numeric"
-                        min="0"
-                        max="51"
-                        step="1"
-                        value="23"
-                        placeholder="23"
-                      />
-                    </label>
-                    <label id="wrap-target">
-                      <span>目标体积 MB（0=不限制）</span>
-                      <input
-                        id="opt-target"
-                        type="number"
-                        inputmode="numeric"
-                        min="0"
-                        max="10240"
-                        step="1"
-                        value="0"
-                        placeholder="0"
-                      />
-                    </label>
+                <div
+                  id="custom-opts"
+                  class="opts-collapse"
+                  aria-hidden="true"
+                >
+                  <div class="opts-collapse__inner">
+                    <div class="opts-block opts-custom">
+                      <div class="opts-label">自定义参数</div>
+                      <div class="grid">
+                        <label id="wrap-crf">
+                          <span>CRF 质量（越小越高清）</span>
+                          <input
+                            id="opt-crf"
+                            type="number"
+                            inputmode="numeric"
+                            min="0"
+                            max="51"
+                            step="1"
+                            value="23"
+                            placeholder="23"
+                          />
+                        </label>
+                        <label id="wrap-target">
+                          <span>目标体积 MB（0=不限制）</span>
+                          <input
+                            id="opt-target"
+                            type="number"
+                            inputmode="numeric"
+                            min="0"
+                            max="10240"
+                            step="1"
+                            value="0"
+                            placeholder="0"
+                          />
+                        </label>
+                      </div>
+                      <p class="opts-hint muted">
+                        CRF 建议 18–28；目标体积与 CRF 二选一优先用目标体积估算码率。编码器 / 水印等仍用本机设置。
+                      </p>
+                    </div>
                   </div>
-                  <p class="opts-hint muted">
-                    CRF 建议 18–28；目标体积与 CRF 二选一优先用目标体积估算码率。编码器 / 水印等仍用本机设置。
-                  </p>
+                </div>
+
+                <div
+                  id="image-custom-opts"
+                  class="opts-collapse"
+                  aria-hidden="true"
+                >
+                  <div class="opts-collapse__inner">
+                    <div class="opts-block opts-custom">
+                      <div class="opts-label">自定义图片参数</div>
+                      <div class="grid">
+                        <label id="wrap-iformat">
+                          <span>图片格式</span>
+                          <select id="opt-iformat">
+                            <option value="jpeg">JPEG</option>
+                            <option value="png">PNG</option>
+                            <option value="webp">WebP</option>
+                            <option value="keep">保持原格式</option>
+                          </select>
+                        </label>
+                        <label id="wrap-iquality">
+                          <span>质量（1–100）</span>
+                          <input
+                            id="opt-iquality"
+                            inputmode="numeric"
+                            max="100"
+                            min="1"
+                            placeholder="80"
+                            step="1"
+                            type="number"
+                            value="80"
+                          />
+                        </label>
+                        <label id="wrap-imaxedge">
+                          <span>最长边</span>
+                          <input
+                            id="opt-imaxedge"
+                            inputmode="numeric"
+                            max="16000"
+                            min="0"
+                            placeholder="0=不缩放"
+                            step="1"
+                            type="number"
+                            value="1920"
+                          />
+                        </label>
+                        <label id="wrap-istrip" class="check-row">
+                          <span>去除元数据</span>
+                          <input id="opt-istrip" checked type="checkbox" />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <p id="upload-error" class="error banner-error" hidden></p>
@@ -322,12 +400,12 @@
           </aside>
 
           <section class="workbench-main">
-            <div class="card card-tasks">
-              <div class="card-head">
+            <div class="card card-tasks panel">
+              <div class="card-head panel__head">
                 <div class="card-title-wrap">
                   <span class="card-icon card-icon-list" aria-hidden="true">☰</span>
                   <div>
-                    <h2>任务队列</h2>
+                    <h2 class="panel__title">任务队列</h2>
                     <p class="card-sub">自动刷新 · 完成后下载</p>
                   </div>
                 </div>
@@ -347,10 +425,10 @@
                   <tbody id="task-body">
                     <tr class="empty-row">
                       <td colspan="5">
-                        <div class="empty-state">
+                        <div class="empty-state queue-empty">
                           <div class="empty-icon" aria-hidden="true">◇</div>
                           <p>暂无任务</p>
-                          <span class="muted">从左侧投递文件后显示在这里</span>
+                          <span class="muted">从左侧投递文件后，本机将排队处理并在此显示进度。</span>
                         </div>
                       </td>
                     </tr>

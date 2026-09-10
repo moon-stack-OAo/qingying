@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
 import { APP_NAME, LEGACY_APP_NAMES } from '../../shared/brand'
+import { isAllowedDataDirForSet, pathNotAllowedError } from './pathAllowlist'
 
 /** 数据目录覆盖配置存放位置（appData，不随 userData 变化） */
 const OVERRIDE_DIR_NAME = APP_NAME
@@ -275,6 +276,11 @@ export function setUserDataDir(
   const current = app.getPath('userData')
   if (normalizePath(current) === normalizePath(value)) {
     return { ok: true, restart: false }
+  }
+
+  // 须先经 SELECT_DIR 登记进白名单，禁止渲染进程任意指定数据目录
+  if (!isAllowedDataDirForSet(value, current)) {
+    return { ok: false, error: pathNotAllowedError('数据目录') }
   }
 
   const migrate = migrateDataFiles(current, value)

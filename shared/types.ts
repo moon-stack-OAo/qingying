@@ -675,15 +675,21 @@ export interface AppSettings {
   lanPort: number
   /**
    * 局域网服务监听地址：
-   * - `0.0.0.0`：局域网可达（默认，兼容现有远程访问）
-   * - `127.0.0.1`：仅本机
+   * - `127.0.0.1`：仅本机（默认，更安全）
+   * - `0.0.0.0`：局域网可达（需强密码 + 配对码）
    */
   lanBindHost: '0.0.0.0' | '127.0.0.1'
   /** 远程访问用户名，默认 admin */
   lanUsername: string
-  /** 远程访问密码 scrypt 哈希（含 salt），勿存明文 */
+  /** 远程访问密码 scrypt 哈希（含 salt），勿存明文；勿经 SETTINGS_GET 下发渲染进程 */
   lanPasswordHash: string
 }
+
+/**
+ * 下发给渲染进程的设置（省略 lanPasswordHash）。
+ * 是否已设局域网密码请用 LanStatus.hasPassword。
+ */
+export type AppSettingsPublic = Omit<AppSettings, 'lanPasswordHash'>
 
 /** 局域网远程访问运行状态（设置 UI / IPC） */
 export interface LanStatus {
@@ -701,6 +707,15 @@ export interface LanStatus {
   urls: string[]
   /** 启动失败等原因 */
   error?: string
+  /**
+   * 绑定局域网（0.0.0.0）时登录所需的配对码（仅内存，不下盘）。
+   * 仅本机绑定时为 null。
+   */
+  pairCode: string | null
+  /** 配对码过期时间戳（ms）；无码时为 null */
+  pairCodeExpiresAt: number | null
+  /** 当前是否要求登录携带配对码（绑定 0.0.0.0 时为 true） */
+  pairCodeRequired: boolean
 }
 
 /** 局域网远程任务列表项（脱敏，不含本机绝对路径） */
@@ -836,6 +851,8 @@ export const IpcChannels = {
   LAN_GET_STATUS: 'lan:get-status',
   /** 设置局域网远程访问配置（开关/端口/账号/密码） */
   LAN_SET_CONFIG: 'lan:set-config',
+  /** 刷新局域网登录配对码（仅内存） */
+  LAN_REFRESH_PAIR_CODE: 'lan:refresh-pair-code',
   /** 清空已持久化任务 */
   TASKS_CLEAR: 'tasks:clear',
   /** 应用信息（设置抽屉「关于」） */
@@ -1203,8 +1220,8 @@ export interface ElectronAPI {
   cancelAll: () => Promise<{ ok: boolean }>
   setConcurrency: (n: number) => Promise<ConcurrencyResult>
   getConcurrency: () => Promise<ConcurrencyResult>
-  getSettings: () => Promise<AppSettings>
-  setSettings: (partial: Partial<AppSettings>) => Promise<AppSettings>
+  getSettings: () => Promise<AppSettingsPublic>
+  setSettings: (partial: Partial<AppSettingsPublic>) => Promise<AppSettingsPublic>
   /**
    * 设置自定义 ffmpeg bin 目录（须同时含 ffmpeg 与 ffprobe）
    * 空串 dir = 清除覆盖，回退自动探测（ffmpeg-static）
@@ -1265,10 +1282,12 @@ export interface ElectronAPI {
   setLanRemoteConfig: (
     config: LanRemoteConfigInput
   ) => Promise<{ ok: boolean; status: LanStatus; error?: string }>
+  /** 刷新局域网配对码（绑定 0.0.0.0 时有效） */
+  refreshLanPairCode: () => Promise<LanStatus>
   /** 清空已持久化的任务列表 */
   clearStoredTasks: () => Promise<{ ok: boolean; error?: string }>
-  /** 重置全部设置为默认值，返回重置后的设置 */
-  resetSettings: () => Promise<AppSettings>
+  /** 重置全部设置为默认值，返回重置后的设置（已脱敏） */
+  resetSettings: () => Promise<AppSettingsPublic>
   /** 获取应用信息（版本 / 运行时 / userData 路径） */
   getAppInfo: () => Promise<AppInfo>
   /** 加载可恢复的任务列表 */

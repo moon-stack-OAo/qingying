@@ -82,17 +82,23 @@ export function parseCookie(
 }
 
 /**
- * 构造 Set-Cookie 字符串
+ * 构造 Set-Cookie 字符串。
+ *
+ * **默认不加 Secure**：局域网远程为明文 HTTP（含 `0.0.0.0` 绑定）。
+ * 浏览器在非 HTTPS 下会丢弃带 `Secure` 的 Cookie，导致登录会话立刻失效。
+ * 缓解依赖：HttpOnly + SameSite=Lax、强密码、配对码、可选仅绑 `127.0.0.1`、受信网络。
+ * 若日后提供 HTTPS，可传 `secure: true`。
  */
 export function buildSetCookie(
   name: string,
   value: string,
-  opts: { maxAgeSec?: number; clear?: boolean } = {}
+  opts: { maxAgeSec?: number; clear?: boolean; secure?: boolean } = {}
 ): string {
+  const securePart = opts.secure ? '; Secure' : ''
   if (opts.clear) {
-    return `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+    return `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${securePart}`
   }
   const maxAge =
     typeof opts.maxAgeSec === 'number' ? opts.maxAgeSec : Math.floor(SESSION_TTL_MS / 1000)
-  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`
+  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${securePart}`
 }

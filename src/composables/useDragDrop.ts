@@ -1,5 +1,6 @@
 import { ref, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { fileUrlToPath, pathBasename } from '@shared/pathUtils'
 
 export interface UseDragDropOptions {
   addFiles: (files: Array<{ path: string; name: string }>) => void
@@ -7,22 +8,12 @@ export interface UseDragDropOptions {
   lastDropOkAt: Ref<number>
 }
 
-/** 窗口级拖拽：渲染进程 drop 与 preload IPC 双通道 */
+/**
+ * 窗口级拖拽：渲染进程 drop 与 preload IPC 双通道。
+ * file: URL / basename 纯逻辑见 shared/pathUtils（与 preload 同源）；路径解析仍以 preload webUtils 为主。
+ */
 export function useDragDrop(options: UseDragDropOptions) {
   const dragging = ref(false)
-
-  function fileUrlToPath(url: string): string {
-    const raw = url.trim()
-    if (!raw || !/^file:/i.test(raw)) return ''
-    try {
-      const u = new URL(raw)
-      let p = decodeURIComponent(u.pathname || '')
-      if (/^\/[A-Za-z]:\//.test(p)) p = p.slice(1)
-      return p.replace(/\//g, '\\')
-    } catch {
-      return ''
-    }
-  }
 
   function onDragOver(e: DragEvent): void {
     e.preventDefault()
@@ -61,7 +52,7 @@ export function useDragDrop(options: UseDragDropOptions) {
       seen.add(path)
       collected.push({
         path,
-        name: name || path.replace(/^.*[\\/]/, '')
+        name: name || pathBasename(path)
       })
     }
 
@@ -118,7 +109,7 @@ export function useDragDrop(options: UseDragDropOptions) {
         console.log(
           '[renderer] onFilesDropped',
           files.length,
-          files.map((f) => f.name || f.path.replace(/^.*[\\/]/, ''))
+          files.map((f) => f.name || pathBasename(f.path))
         )
       }
       if (!files.length) {

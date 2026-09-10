@@ -3,6 +3,7 @@ import {resolve} from 'path'
 import type {Plugin} from 'vite'
 import {defineConfig, externalizeDepsPlugin} from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
+import {PRODUCT_NAME} from './shared/brand'
 
 /** 将局域网 Web 静态资源复制到 out/main/public */
 function copyLanWebPlugin(): Plugin {
@@ -20,6 +21,16 @@ function copyLanWebPlugin(): Plugin {
     },
     closeBundle() {
       copy()
+    }
+  }
+}
+
+/** 将 index.html 标题占位符替换为 shared/brand 的 PRODUCT_NAME */
+function injectProductNameHtmlPlugin(): Plugin {
+  return {
+    name: 'inject-product-name-html',
+    transformIndexHtml(html) {
+      return html.split('__PRODUCT_NAME__').join(PRODUCT_NAME)
     }
   }
 }
@@ -60,6 +71,6 @@ export default defineConfig({
         '@shared': resolve(__dirname, 'shared')
       }
     },
-    plugins: [vue()]
+    plugins: [vue(), injectProductNameHtmlPlugin()]
   }
 })
