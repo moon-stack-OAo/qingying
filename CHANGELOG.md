@@ -9,6 +9,14 @@
 
 - Windows 代码签名、macOS 公证完整链路（配置与证书就绪后启用）
 
+## [1.2.4]
+
+### 优化
+
+- **设置抽屉滚动条**：`el-scrollbar` 内容区右侧留白，避免浮动滚动条遮挡控件与文案
+- **远程访问设置分区**：按「服务 / 安全 / 访问」分段，合并密码状态展示并精简重复安全说明
+- **更新弹窗与滚动统一**：软件更新弹窗系统风格化；主要滚动区改用 Element Plus 滚动条；设置各 Tab 间距统一
+
 ## [1.2.3]
 
 ### 安全
@@ -288,7 +296,9 @@
 | `Ctrl/Cmd + D`                                | 切换浅色 / 深色 |
 | `F1` 或 `Ctrl + /`                             | 快捷键帮助     |
 
-[Unreleased]: https://github.com/moon-stack-OAo/qingying/compare/v1.2.3...HEAD
+[Unreleased]: https://github.com/moon-stack-OAo/qingying/compare/v1.2.4...HEAD
+
+[1.2.4]: https://github.com/moon-stack-OAo/qingying/releases/tag/v1.2.4
 
 [1.2.3]: https://github.com/moon-stack-OAo/qingying/releases/tag/v1.2.3
 
