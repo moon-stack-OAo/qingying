@@ -554,9 +554,9 @@ function onPathKeydown(e: KeyboardEvent): void {
       <el-tab-pane label="远程访问" name="lan" lazy>
         <el-scrollbar class="settings-scroll">
         <div class="setting-pane">
-          <div class="section-label">网络</div>
+          <div class="section-label">服务</div>
           <p class="setting-hint lan-intro">
-            开启后，同一局域网内可用浏览器访问本机服务。请设置至少
+            开启后可在浏览器访问本机服务。请设置至少
             {{ LAN_PASSWORD_MIN_LENGTH }} 位强密码，并仅在受信网络使用。
           </p>
           <div class="setting-row setting-row-meta">
@@ -615,7 +615,7 @@ function onPathKeydown(e: KeyboardEvent): void {
               <el-radio-button value="0.0.0.0">局域网</el-radio-button>
             </el-radio-group>
             <p class="setting-hint lan-bind-hint">
-              推荐「仅本机」（127.0.0.1）本机调试；「局域网」时同网段均可访问，且登录需配对码。
+              「仅本机」适合本机调试；「局域网」同网段可访问，登录需配对码。
             </p>
           </div>
           <div
@@ -624,11 +624,10 @@ function onPathKeydown(e: KeyboardEvent): void {
             role="note"
           >
             <strong>安全提示</strong>
-            绑定 0.0.0.0 时，同一局域网内设备均可尝试访问；通信为
-            HTTP 明文（Cookie 无法使用 Secure）。请使用至少
-            {{ LAN_PASSWORD_MIN_LENGTH }}
-            位强密码，并核对下方配对码；勿在公共 Wi‑Fi 开启；更安全时可改为「仅本机」。
+            同网段设备均可尝试访问，通信为 HTTP 明文。请使用强密码并核对配对码；勿在公共 Wi‑Fi 开启。
           </div>
+
+          <div class="section-label">安全</div>
           <div
             v-if="lanStatus?.pairCodeRequired"
             class="setting-field lan-pair-block"
@@ -653,9 +652,9 @@ function onPathKeydown(e: KeyboardEvent): void {
               </el-button>
             </div>
             <p class="setting-hint">
-              手机/其他设备登录时需填写此码（仅内存，约 10 分钟有效）。
+              其他设备登录时需填写（约 10 分钟有效）。
               <template v-if="lanStatus?.pairCodeExpiresAt">
-                过期时间：{{ formatPairExpires(lanStatus.pairCodeExpiresAt) }}
+                过期：{{ formatPairExpires(lanStatus.pairCodeExpiresAt) }}
               </template>
               <template v-else-if="!lanStatus?.running">
                 服务未运行时无有效配对码。
@@ -673,7 +672,12 @@ function onPathKeydown(e: KeyboardEvent): void {
             />
           </div>
           <div class="setting-field">
-            <label>新密码</label>
+            <label>
+              新密码
+              <span class="setting-field-extra">
+                {{ lanStatus?.hasPassword ? '已设置' : '未设置' }}
+              </span>
+            </label>
             <el-input
               v-model="lanPassword"
               type="password"
@@ -700,12 +704,6 @@ function onPathKeydown(e: KeyboardEvent): void {
               autocomplete="new-password"
             />
           </div>
-          <div class="setting-row setting-row-meta">
-            <div class="setting-meta">
-              <strong>密码</strong>
-              <span>{{ lanStatus?.hasPassword ? '已设置（哈希存储）' : '未设置' }}</span>
-            </div>
-          </div>
           <div class="setting-row actions">
             <el-button
               size="small"
@@ -719,27 +717,30 @@ function onPathKeydown(e: KeyboardEvent): void {
               刷新状态
             </el-button>
           </div>
-          <div v-if="lanStatus?.urls?.length" class="section-label">本机地址</div>
-          <div v-if="lanStatus?.urls?.length" class="lan-urls">
-            <el-tooltip
-              v-for="url in lanStatus.urls"
-              :key="url"
-              :content="'点击复制 ' + url"
-              :show-after="400"
-              placement="top"
-            >
-              <button
-                class="path-copy-btn lan-url-btn"
-                type="button"
-                @click="copyLanUrl(url)"
+
+          <template v-if="lanStatus?.urls?.length">
+            <div class="section-label">访问</div>
+            <div class="lan-urls">
+              <el-tooltip
+                v-for="url in lanStatus.urls"
+                :key="url"
+                :content="'点击复制 ' + url"
+                :show-after="400"
+                placement="top"
               >
-                {{ url }}
-              </button>
-            </el-tooltip>
-          </div>
-          <p class="setting-hint">
-            服务使用 HTTP 明文（会话 Cookie 含 HttpOnly，因非 HTTPS 不加 Secure）。关闭远程或改密将清除会话。
-          </p>
+                <button
+                  class="path-copy-btn lan-url-btn"
+                  type="button"
+                  @click="copyLanUrl(url)"
+                >
+                  {{ url }}
+                </button>
+              </el-tooltip>
+            </div>
+            <p class="setting-hint">
+              HTTP 明文传输；关闭远程或改密将清除会话。
+            </p>
+          </template>
         </div>
         </el-scrollbar>
       </el-tab-pane>
@@ -1028,8 +1029,19 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .setting-field label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 11px;
   color: var(--muted);
+}
+
+.setting-field-extra {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.85;
 }
 
 .path-row {
