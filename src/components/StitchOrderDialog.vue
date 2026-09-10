@@ -54,8 +54,12 @@ const draftBackground = ref('#000000')
 const dragFrom = ref<number | null>(null)
 /** 插入指示：悬停行上方插入为该 index，下方为 index+1 */
 const insertAt = ref<number | null>(null)
-const listEl = ref<HTMLElement | null>(null)
+const listScrollbar = ref<{ wrapRef?: HTMLElement } | null>(null)
 let autoScrollRaf = 0
+
+function listWrap(): HTMLElement | null {
+  return listScrollbar.value?.wrapRef ?? null
+}
 
 const isImageStitch = computed(() => props.mode === 'image-stitch')
 const dialogTitle = '调整拼接顺序'
@@ -134,7 +138,7 @@ function moveItem(from: number, to: number): void {
 
 /** 根据指针 Y 得到插入位置 [0..length] */
 function insertIndexFromClientY(clientY: number): number | null {
-  const root = listEl.value
+  const root = listWrap()
   if (!root) return null
   const rows = root.querySelectorAll<HTMLElement>('[data-stitch-row]')
   if (!rows.length) return 0
@@ -154,7 +158,7 @@ function cancelAutoScroll(): void {
 }
 
 function maybeAutoScroll(clientY: number): void {
-  const root = listEl.value
+  const root = listWrap()
   if (!root) return
   const rect = root.getBoundingClientRect()
   const edge = 36
@@ -171,8 +175,9 @@ function maybeAutoScroll(clientY: number): void {
   if (autoScrollRaf) return
   const step = (): void => {
     autoScrollRaf = 0
-    if (dragFrom.value == null || !listEl.value) return
-    listEl.value.scrollTop += dy
+    const wrap = listWrap()
+    if (dragFrom.value == null || !wrap) return
+    wrap.scrollTop += dy
     // 继续滚动直到离开边缘（下一 pointermove 会重新判定）
   }
   autoScrollRaf = requestAnimationFrame(step)
@@ -359,7 +364,7 @@ function showInsertAfterLast(): boolean {
       </div>
     </div>
 
-    <div ref="listEl" class="list">
+    <el-scrollbar ref="listScrollbar" class="list" max-height="min(420px, 52vh)">
       <div
         v-for="(p, idx) in draftPaths"
         :key="`${idx}\0${p}`"
@@ -408,7 +413,7 @@ function showInsertAfterLast(): boolean {
       </div>
       <div v-if="showInsertAfterLast()" class="insert-line is-tail" aria-hidden="true" />
       <div v-if="!draftPaths.length" class="empty">暂无文件</div>
-    </div>
+    </el-scrollbar>
 
     <div v-if="editable" class="footer-extra">
       <el-button size="small" type="primary" plain @click="emit('append')">
@@ -494,15 +499,17 @@ function showInsertAfterLast(): boolean {
 }
 
 .list {
-  max-height: min(420px, 52vh);
-  overflow: auto;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
+  background: var(--surface, var(--panel-bg));
+  height: auto;
+}
+
+.list :deep(.el-scrollbar__view) {
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--surface, var(--panel-bg));
 }
 
 .row {

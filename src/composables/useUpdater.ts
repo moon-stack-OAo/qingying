@@ -1,6 +1,15 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import type { UpdateStatusPayload } from '@shared/types'
+import type { UpdateState, UpdateStatusPayload } from '@shared/types'
+
+/** 开发态 UI 预览用假数据（不走真实更新） */
+const PREVIEW_NOTES = `## 新特性
+- 更新弹窗改为系统更新风格
+- 优化暗色主题对比度
+
+## 修复
+- 修复下载进度显示抖动
+- 其它稳定性改进`
 
 /** 应用版本与自动更新 */
 export function useUpdater() {
@@ -144,6 +153,91 @@ export function useUpdater() {
     })
   }
 
+  /** 仅开发态：模拟各更新 UI 状态，便于预览弹窗样式 */
+  function previewUpdateState(state: UpdateState): void {
+    if (isPackaged.value) return
+    updateDialogVisible.value = true
+    const current = appVersion.value || '0.0.0'
+    const next = `v${bumpPatch(current)}`
+    const base: UpdateStatusPayload = {
+      state,
+      currentVersion: current,
+      silent: true
+    }
+
+    switch (state) {
+      case 'idle':
+        applyUpdateStatus({ ...base, message: undefined, version: undefined })
+        break
+      case 'checking':
+        applyUpdateStatus({ ...base, message: '正在连接更新服务器…' })
+        break
+      case 'available':
+        applyUpdateStatus({
+          ...base,
+          version: next,
+          message: `发现新版本 ${next}`,
+          releaseNotes: PREVIEW_NOTES
+        })
+        break
+      case 'not-available':
+        applyUpdateStatus({
+          ...base,
+          version: current,
+          message: `当前已是最新版本 v${current}`
+        })
+        break
+      case 'downloading':
+        applyUpdateStatus({
+          ...base,
+          version: next,
+          message: '正在下载更新…',
+          percent: 42,
+          transferred: 18 * 1024 * 1024,
+          total: 42 * 1024 * 1024,
+          bytesPerSecond: 2.4 * 1024 * 1024,
+          releaseNotes: PREVIEW_NOTES
+        })
+        break
+      case 'downloaded':
+        applyUpdateStatus({
+          ...base,
+          version: next,
+          message: `新版本 ${next} 已下载，请点击「安装并重启」`,
+          percent: 100,
+          releaseNotes: PREVIEW_NOTES
+        })
+        break
+      case 'installing':
+        applyUpdateStatus({
+          ...base,
+          version: next,
+          message: '正在安装更新，应用即将重启…',
+          percent: 100
+        })
+        break
+      case 'error':
+        applyUpdateStatus({
+          ...base,
+          version: next,
+          message: '连接更新服务器超时或中断，请检查网络后重试'
+        })
+        break
+      default:
+        applyUpdateStatus(base)
+    }
+  }
+
+  function bumpPatch(ver: string): string {
+    const raw = ver.replace(/^v/i, '')
+    const parts = raw.split('.').map((p) => Number.parseInt(p, 10))
+    if (parts.length >= 3 && parts.every((n) => Number.isFinite(n))) {
+      parts[2] += 1
+      return parts.join('.')
+    }
+    return `${raw || '0.0.0'}-next`
+  }
+
   return {
     appVersion,
     isPackaged,
@@ -157,6 +251,7 @@ export function useUpdater() {
     onDownloadUpdate,
     onCancelDownload,
     onInstallUpdate,
+    previewUpdateState,
     subscribe
   }
 }

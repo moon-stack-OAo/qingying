@@ -317,6 +317,7 @@ function onPathKeydown(e: KeyboardEvent): void {
 
     <el-tabs v-model="activeTab" class="settings-tabs">
       <el-tab-pane label="通用" name="general" lazy>
+        <el-scrollbar class="settings-scroll">
         <div class="setting-pane">
           <div class="section-label">外观</div>
           <div class="setting-row setting-row-meta">
@@ -423,9 +424,11 @@ function onPathKeydown(e: KeyboardEvent): void {
             />
           </div>
         </div>
+        </el-scrollbar>
       </el-tab-pane>
 
       <el-tab-pane label="编码" name="ffmpeg" lazy>
+        <el-scrollbar class="settings-scroll">
         <div class="setting-pane">
           <div class="section-label">引擎</div>
           <div class="setting-row setting-row-meta">
@@ -545,9 +548,11 @@ function onPathKeydown(e: KeyboardEvent): void {
           </div>
           <p class="setting-hint">可指定 magick.exe 全路径，或含 magick 的安装目录</p>
         </div>
+        </el-scrollbar>
       </el-tab-pane>
 
       <el-tab-pane label="远程访问" name="lan" lazy>
+        <el-scrollbar class="settings-scroll">
         <div class="setting-pane">
           <div class="section-label">网络</div>
           <p class="setting-hint lan-intro">
@@ -736,9 +741,11 @@ function onPathKeydown(e: KeyboardEvent): void {
             服务使用 HTTP 明文（会话 Cookie 含 HttpOnly，因非 HTTPS 不加 Secure）。关闭远程或改密将清除会话。
           </p>
         </div>
+        </el-scrollbar>
       </el-tab-pane>
 
       <el-tab-pane label="数据" name="data" lazy>
+        <el-scrollbar class="settings-scroll">
         <div class="setting-pane">
           <div class="section-label">存储</div>
           <div class="setting-field">
@@ -778,9 +785,11 @@ function onPathKeydown(e: KeyboardEvent): void {
             </el-button>
           </div>
         </div>
+        </el-scrollbar>
       </el-tab-pane>
 
       <el-tab-pane label="关于" name="about" lazy>
+        <el-scrollbar class="settings-scroll">
         <div class="setting-pane">
           <div class="section-label">应用</div>
           <div class="setting-row setting-row-meta">
@@ -818,6 +827,7 @@ function onPathKeydown(e: KeyboardEvent): void {
             </el-button>
           </div>
         </div>
+        </el-scrollbar>
       </el-tab-pane>
     </el-tabs>
 
@@ -894,22 +904,26 @@ function onPathKeydown(e: KeyboardEvent): void {
 .settings-tabs :deep(.el-tabs__content) {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .settings-tabs :deep(.el-tab-pane) {
-  height: auto;
+  height: 100%;
+}
+
+.settings-scroll {
+  height: 100%;
 }
 
 .setting-pane {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding-bottom: 8px;
+  padding-bottom: 12px;
 }
 
 .section-label {
-  margin: 16px 0 8px;
+  margin: 20px 0 10px;
   font-size: 11px;
   font-weight: 600;
   font-family: var(--font-mono);
@@ -931,7 +945,7 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .setting-row-meta {
-  padding: 10px 0;
+  padding: 12px 0;
   border-bottom: 1px solid var(--border);
   flex-wrap: nowrap;
   gap: 12px;
@@ -939,6 +953,13 @@ function onPathKeydown(e: KeyboardEvent): void {
 
 .setting-row-meta:last-child {
   border-bottom: 0;
+}
+
+.setting-row-meta + .section-label,
+.setting-field + .section-label,
+.setting-row.actions + .section-label,
+.setting-hint + .section-label {
+  margin-top: 22px;
 }
 
 .setting-meta {
@@ -1002,8 +1023,8 @@ function onPathKeydown(e: KeyboardEvent): void {
 .setting-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 12px;
+  gap: 6px;
+  margin-bottom: 14px;
 }
 
 .setting-field label {
@@ -1064,7 +1085,7 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .setting-hint {
-  margin: 0;
+  margin: 8px 0 0;
   font-size: 12px;
   color: var(--muted);
   line-height: 1.5;
@@ -1072,7 +1093,7 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .setting-error-block {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   border: 1px solid color-mix(in oklch, var(--danger) 35%, var(--border));
@@ -1126,11 +1147,16 @@ function onPathKeydown(e: KeyboardEvent): void {
 .setting-row.actions {
   flex-wrap: wrap;
   gap: 8px;
-  padding: 4px 0 8px;
+  padding: 12px 0 4px;
+}
+
+.setting-row-meta + .setting-row.actions,
+.setting-field + .setting-row.actions {
+  margin-top: 2px;
 }
 
 .lan-intro {
-  margin: 0 0 8px;
+  margin: 0 0 12px;
 }
 
 .w-port {

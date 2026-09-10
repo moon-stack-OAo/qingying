@@ -758,6 +758,7 @@ const {
   onDownloadUpdate,
   onCancelDownload,
   onInstallUpdate,
+  previewUpdateState,
   subscribe: subscribeUpdater
 } = useUpdater()
 
@@ -1223,6 +1224,7 @@ async function onResetSettings(): Promise<void> {
         @download-update="onDownloadUpdate"
         @cancel-download="onCancelDownload"
         @install-update="onInstallUpdate"
+        @preview-state="previewUpdateState"
     />
 
     <ShortcutHelpDialog v-model="shortcutHelpVisible"/>

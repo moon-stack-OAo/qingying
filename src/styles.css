@@ -309,13 +309,12 @@ body,
   background: var(--app-bg);
 }
 
-/* 常用参数留在主区；高级进抽屉后主区高度稳定，仅作兜底滚动 */
+/* 常用参数留在主区；滚动改由内部 el-scrollbar 承接 */
 .shell-main > .options-panel.panel {
   flex: 0 0 auto;
   min-height: 0;
   max-height: min(42vh, calc(100% - 240px));
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .workspace {
@@ -512,7 +511,6 @@ body,
 .options-panel.panel {
   padding-top: 12px;
   padding-bottom: 12px;
-  scrollbar-gutter: stable;
 }
 
 .task-table {
@@ -646,39 +644,7 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
-/* 细滚动条（设置抽屉、更新说明、帮助等） */
-.thin-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklch, var(--accent) 42%, var(--app-fg-muted)) transparent;
-}
-
-.thin-scrollbar::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-
-.thin-scrollbar::-webkit-scrollbar-track {
-  margin: 6px 0;
-  background: color-mix(in oklch, var(--app-fg) 4%, transparent);
-  border-radius: 999px;
-}
-
-.thin-scrollbar::-webkit-scrollbar-thumb {
-  background: color-mix(in oklch, var(--accent) 55%, transparent);
-  border-radius: 999px;
-  border: 0 solid transparent;
-  background-clip: padding-box;
-}
-
-.thin-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--accent);
-}
-
-.thin-scrollbar::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-/* 设置抽屉：内容区滚动 */
+/* 设置抽屉：内容区滚动由各 Tab 内 el-scrollbar 承接 */
 .settings-drawer .el-drawer__body {
   display: flex;
   flex-direction: column;
@@ -687,36 +653,15 @@ body,
   min-height: 0;
 }
 
-.settings-drawer .settings-tabs .el-tabs__content {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklch, var(--app-fg-muted) 55%, transparent) transparent;
+/* 更新弹窗：页脚与内容区同底，避免 surface-2 灰条割裂 */
+.el-dialog.update-dialog .el-dialog__footer {
+  background: var(--panel-bg);
+  box-shadow: inset 0 1px 0 0 color-mix(in oklch, var(--panel-border) 70%, transparent);
 }
 
-.settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+.el-dialog.update-dialog .el-dialog__body {
+  padding-bottom: 12px;
 }
-
-.settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar-track {
-  margin: 6px 0;
-  background: color-mix(in oklch, var(--app-fg) 4%, transparent);
-  border-radius: 999px;
-}
-
-.settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar-thumb {
-  background: color-mix(in oklch, var(--accent) 55%, transparent);
-  border-radius: 999px;
-}
-
-.settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar-thumb:hover {
-  background: var(--accent);
-}
-
-.settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-/* 更新弹窗样式见 UpdateDialog.vue scoped */
 
 /* 自定义浮层描边：去掉 Element 默认边框，改用 ring + 阴影 */
 .el-dialog,

@@ -515,6 +515,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 
 <template>
   <div class="panel options-panel">
+    <el-scrollbar class="options-scroll" max-height="min(42vh, calc(100vh - 280px))">
     <div class="options-header">
       <div class="options-header-left">
         <div class="options-title-block">
@@ -1176,6 +1177,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
         <span class="muted">{{ advancedSummary }}</span>
       </button>
     </div>
+    </el-scrollbar>
 
     <el-drawer
       v-if="showAdvancedSection"
@@ -2352,6 +2354,10 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 </template>
 
 <style scoped>
+.options-scroll {
+  height: auto;
+}
+
 .options-header {
   display: flex;
   align-items: center;

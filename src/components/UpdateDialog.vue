@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import {computed} from 'vue'
 import {CircleCheckFilled, Download, InfoFilled, Loading, WarningFilled} from '@element-plus/icons-vue'
-import type {UpdateStatusPayload} from '@shared/types'
+import type {UpdateState, UpdateStatusPayload} from '@shared/types'
 import {PRODUCT_NAME} from '@shared/brand'
 
 const props = defineProps<{
@@ -19,23 +19,37 @@ const emit = defineEmits<{
   downloadUpdate: []
   cancelDownload: []
   installUpdate: []
+  previewState: [state: UpdateState]
 }>()
 
 const state = computed(() => props.updateInfo.state)
 const isInstalling = computed(() => state.value === 'installing')
+/** 开发态预览安装中时允许关闭，避免卡死 */
+const lockClose = computed(() => isInstalling.value && props.isPackaged)
+
+const previewStates: { value: UpdateState; label: string }[] = [
+  { value: 'idle', label: '空闲' },
+  { value: 'checking', label: '检查中' },
+  { value: 'available', label: '有更新' },
+  { value: 'downloading', label: '下载中' },
+  { value: 'downloaded', label: '已下载' },
+  { value: 'installing', label: '安装中' },
+  { value: 'not-available', label: '已最新' },
+  { value: 'error', label: '失败' }
+]
 
 function close(): void {
-  if (isInstalling.value) return
+  if (lockClose.value) return
   emit('update:modelValue', false)
 }
 
 function onBeforeClose(done: () => void): void {
-  if (isInstalling.value) return
+  if (lockClose.value) return
   done()
 }
 
 function onModelUpdate(v: boolean): void {
-  if (!v && isInstalling.value) return
+  if (!v && lockClose.value) return
   emit('update:modelValue', v)
 }
 
@@ -68,13 +82,16 @@ const showVersionCompare = computed(() => {
   )
 })
 
-/** 无版本对比时的空态（已最新 / 检查中 / 失败 / 开发模式等） */
-const isIdleLayout = computed(() => !showVersionCompare.value)
-
-const idleTitle = computed(() => {
+const heroTitle = computed(() => {
   switch (state.value) {
     case 'checking':
       return '正在检查更新'
+    case 'available':
+      return '有可用更新'
+    case 'downloading':
+      return '正在下载更新'
+    case 'downloaded':
+      return '准备安装更新'
     case 'installing':
       return '正在安装更新'
     case 'not-available':
@@ -82,13 +99,22 @@ const idleTitle = computed(() => {
     case 'error':
       return '更新失败'
     default:
-      return !props.isPackaged ? '开发模式' : '软件更新'
+      return !props.isPackaged ? '开发模式' : '检查软件更新'
   }
 })
 
-const idleHint = computed(() => {
+const heroHint = computed(() => {
   if (state.value === 'installing') {
     return props.updateInfo.message || '正在静默安装并准备重启，请勿关闭本窗口'
+  }
+  if (state.value === 'available') {
+    return props.updateInfo.message || '建议在空闲时更新；进行中的任务会先完成。'
+  }
+  if (state.value === 'downloaded') {
+    return props.updateInfo.message || '重启后完成安装；未保存参数会保留。'
+  }
+  if (state.value === 'downloading') {
+    return '下载在后台进行，可继续处理当前任务'
   }
   if (props.updateInfo.message) return props.updateInfo.message
   if (!props.isPackaged) return '开发模式不检查更新，请使用打包后的安装包验证'
@@ -124,7 +150,7 @@ const primaryLabel = computed(() => {
     case 'downloading':
       return '下载中'
     case 'downloaded':
-      return '立即安装并重启'
+      return '安装并重启'
     case 'installing':
       return '正在安装…'
     case 'error':
@@ -137,21 +163,11 @@ const primaryLabel = computed(() => {
   }
 })
 
-const footerHint = computed(() => {
-  switch (state.value) {
-    case 'available':
-      return '也可稍后从标题栏更新提示进入'
-    case 'downloading':
-      return '下载在后台进行，可继续处理当前任务'
-    case 'downloaded':
-      return '安装前请确认无进行中任务'
-    case 'installing':
-      return '请勿关闭本窗口'
-    case 'error':
-      return props.updateInfo.message || '请检查网络后重试'
-    default:
-      return `当前 ${props.appVersion}`
-  }
+const secondaryLabel = computed(() => {
+  if (state.value === 'downloading') return '取消下载'
+  if (state.value === 'downloaded') return '稍后重启'
+  if (state.value === 'available') return '稍后'
+  return '关闭'
 })
 
 function formatBytes(n: number): string {
@@ -250,6 +266,33 @@ function inlineHtml(text: string): string {
 }
 
 function onPrimary(): void {
+  // 开发态：主按钮只推进预览态，不走真实更新
+  if (!props.isPackaged) {
+    switch (state.value) {
+      case 'available':
+        emit('previewState', 'downloading')
+        break
+      case 'downloading':
+        emit('previewState', 'downloaded')
+        break
+      case 'downloaded':
+        emit('previewState', 'installing')
+        break
+      case 'installing':
+        emit('previewState', 'not-available')
+        break
+      case 'error':
+        emit('previewState', props.updateInfo.version ? 'downloading' : 'checking')
+        break
+      case 'checking':
+        emit('previewState', 'available')
+        break
+      default:
+        emit('previewState', 'checking')
+    }
+    return
+  }
+
   switch (state.value) {
     case 'available':
       emit('downloadUpdate')
@@ -271,7 +314,20 @@ function onPrimary(): void {
   }
 }
 
+function onSecondary(): void {
+  if (state.value === 'downloading') {
+    if (!props.isPackaged) {
+      emit('previewState', 'available')
+      return
+    }
+    emit('cancelDownload')
+    return
+  }
+  close()
+}
+
 const showPrimary = computed(() => true)
+const showSecondary = computed(() => !lockClose.value)
 
 const primaryLoading = computed(() => {
   if (state.value === 'available') return props.updateDownloading
@@ -287,89 +343,85 @@ const primaryDisabled = computed(() => {
   if (state.value === 'error' && !props.updateInfo.version && props.updateChecking) return true
   return false
 })
+
+const primaryButtonType = computed(() => {
+  if (state.value === 'error') return 'danger' as const
+  if (state.value === 'downloaded') return 'warning' as const
+  return 'primary' as const
+})
 </script>
 
 <template>
   <el-dialog
     :before-close="onBeforeClose"
     :close-on-click-modal="false"
-    :close-on-press-escape="!isInstalling"
+    :close-on-press-escape="!lockClose"
     :model-value="modelValue"
-    :show-close="!isInstalling"
+    :show-close="!lockClose"
     align-center
     append-to-body
     class="update-dialog"
     destroy-on-close
-    width="min(560px, 96vw)"
+    width="min(420px, 92vw)"
     @update:model-value="onModelUpdate"
   >
     <template #header>
       <div class="dlg-head-text">
         <div class="dlg-title">软件更新</div>
         <div class="dlg-sub">
-          当前 {{ appVersion }}
+          {{ PRODUCT_NAME }}
           <template v-if="!isPackaged"> · 开发态</template>
-          <template v-else> · {{ PRODUCT_NAME }}</template>
         </div>
       </div>
     </template>
 
-    <div class="update-body" :class="{ 'is-idle': isIdleLayout }">
-      <template v-if="showVersionCompare">
-        <div class="ver">
-          <strong v-if="state === 'downloading'">正在下载 {{ updateInfo.version }}</strong>
-          <strong v-else-if="state === 'downloaded'">下载完成</strong>
-          <strong v-else>{{ updateInfo.version }}</strong>
-          <span v-if="state === 'downloaded'" class="num">{{ updateInfo.version }}</span>
-          <span v-else-if="downloadDetail && state === 'downloading'" class="num">
-            {{ downloadPercent }}%
-          </span>
-          <span v-else class="num">v{{ appVersion }} →</span>
-        </div>
-
-        <div
-          v-if="state === 'available'"
-          class="banner ok"
-        >
-          <strong>发现新版本。</strong>
-          {{ updateInfo.message || '建议在空闲时更新；进行中的任务会先完成。' }}
-        </div>
-
-        <div
-          v-else-if="state === 'downloaded'"
-          class="banner warn"
-        >
-          <strong>需要重启应用以完成安装。</strong>
-          {{ updateInfo.message || '未保存的参数会保留；进行中任务请先结束或取消。' }}
-        </div>
-
-        <div
-          v-else-if="updateInfo.message && state !== 'downloading'"
-          :class="{ danger: state === 'error' }"
-          class="banner"
-        >
-          {{ updateInfo.message }}
-        </div>
-
-        <div v-if="state === 'downloading'" class="download-block">
-          <div class="meter-row">
-            <span>{{ downloadDetail || '正在下载…' }}</span>
-            <span class="num">{{ downloadPercent }}%</span>
-          </div>
-          <div
-            :aria-valuenow="downloadPercent"
-            aria-valuemax="100"
-            aria-valuemin="0"
-            class="progress"
-            role="progressbar"
+    <div class="update-body">
+      <div class="hero" :class="`is-${statusMeta.type}`">
+        <div class="hero-icon" aria-hidden="true">
+          <el-icon
+            :class="{
+              'update-status-spin': state === 'checking' || state === 'installing'
+            }"
+            :size="28"
           >
-            <i :style="{ width: `${downloadPercent}%` }" />
-          </div>
-          <p class="banner soft">下载在后台进行，可继续处理当前任务。</p>
+            <component :is="statusMeta.icon" />
+          </el-icon>
         </div>
+        <div class="hero-title">{{ heroTitle }}</div>
+        <div v-if="showVersionCompare" class="hero-version">
+          <span class="ver-chip muted">v{{ appVersion }}</span>
+          <span class="ver-arrow" aria-hidden="true">→</span>
+          <span class="ver-chip accent">{{ updateInfo.version }}</span>
+        </div>
+        <div v-else class="hero-version">
+          <span class="ver-chip muted">当前 v{{ appVersion }}</span>
+        </div>
+        <p class="hero-hint">{{ heroHint }}</p>
+      </div>
 
-        <div v-if="notesBlocks.length && state !== 'downloading'" class="notes-wrap">
-          <div class="notes-scroll thin-scrollbar">
+      <div v-if="state === 'downloading'" class="download-block">
+        <div class="meter-row">
+          <span class="meter-label">{{ downloadDetail || '正在下载…' }}</span>
+          <span class="meter-pct num">{{ downloadPercent }}%</span>
+        </div>
+        <div
+          :aria-valuenow="downloadPercent"
+          aria-valuemax="100"
+          aria-valuemin="0"
+          class="progress"
+          role="progressbar"
+        >
+          <i :style="{ width: `${downloadPercent}%` }" />
+        </div>
+      </div>
+
+      <div
+        v-if="notesBlocks.length && showVersionCompare && state !== 'downloading'"
+        class="notes-wrap"
+      >
+        <div class="notes-label">更新说明</div>
+        <el-scrollbar class="notes-scroll" max-height="min(160px, 24vh)">
+          <div class="notes-inner">
             <template v-for="(block, i) in notesBlocks" :key="i">
               <div
                 v-if="block.type === 'h'"
@@ -390,49 +442,41 @@ const primaryDisabled = computed(() => {
               </ul>
             </template>
           </div>
-        </div>
-      </template>
+        </el-scrollbar>
+      </div>
 
-      <div v-else class="update-idle" :class="`is-${statusMeta.type}`">
-        <div class="update-idle-icon" aria-hidden="true">
-          <el-icon
-            :class="{
-              'update-status-spin': state === 'checking' || state === 'installing'
-            }"
-            :size="26"
+      <div v-if="!isPackaged" class="preview-bar" aria-label="开发态 UI 预览">
+        <span class="preview-label">预览</span>
+        <div class="preview-chips">
+          <button
+            v-for="item in previewStates"
+            :key="item.value"
+            type="button"
+            class="preview-chip"
+            :class="{ active: state === item.value }"
+            @click="emit('previewState', item.value)"
           >
-            <component :is="statusMeta.icon" />
-          </el-icon>
+            {{ item.label }}
+          </button>
         </div>
-        <div class="update-idle-title">{{ idleTitle }}</div>
-        <div class="update-idle-ver">
-          <span>当前版本</span>
-          <span class="num">v{{ appVersion }}</span>
-        </div>
-        <p class="update-idle-hint">{{ idleHint }}</p>
       </div>
     </div>
 
     <template #footer>
-      <div class="dlg-foot">
-        <span class="dlg-foot-hint">{{ footerHint }}</span>
+      <div class="dlg-foot" :class="{ 'is-solo': lockClose || !showSecondary }">
         <el-button
-          v-if="state === 'downloading'"
-          @click="emit('cancelDownload')"
+          v-if="!lockClose"
+          class="btn-secondary"
+          @click="onSecondary"
         >
-          取消下载
-        </el-button>
-        <el-button
-          v-else-if="state !== 'installing'"
-          @click="close"
-        >
-          {{ state === 'downloaded' ? '稍后重启' : state === 'available' ? '稍后' : '关闭' }}
+          {{ secondaryLabel }}
         </el-button>
         <el-button
           v-if="showPrimary"
-          :disabled="primaryDisabled"
-          :loading="primaryLoading"
-          type="primary"
+          :disabled="isPackaged ? primaryDisabled : false"
+          :loading="isPackaged ? primaryLoading : false"
+          :type="primaryButtonType"
+          class="btn-primary"
           @click="onPrimary"
         >
           {{ primaryLabel }}
@@ -450,7 +494,7 @@ const primaryDisabled = computed(() => {
 
 .dlg-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--app-fg);
@@ -467,97 +511,145 @@ const primaryDisabled = computed(() => {
 .update-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  min-height: min(200px, 28vh);
-  font-size: 13px;
-  color: var(--app-fg-secondary);
-  line-height: 1.5;
+  gap: 14px;
+  min-height: 0;
 }
 
-.update-body.is-idle {
-  min-height: min(180px, 24vh);
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 8px 4px 4px;
+}
+
+.hero-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 22%, var(--border));
+}
+
+.hero.is-ok .hero-icon {
+  background: var(--ok-soft);
+  color: var(--ok);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--ok) 28%, var(--border));
+}
+
+.hero.is-danger .hero-icon {
+  background: var(--danger-soft);
+  color: var(--danger);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--danger) 28%, var(--border));
+}
+
+.hero.is-warn .hero-icon {
+  background: var(--warn-soft);
+  color: var(--warn);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--warn) 28%, var(--border));
+}
+
+.hero.is-accent .hero-icon,
+.hero.is-info .hero-icon {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 22%, var(--border));
+}
+
+.hero-title {
+  margin-top: 4px;
+  font-size: 17px;
+  font-weight: 650;
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  line-height: 1.25;
+}
+
+.hero-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
   justify-content: center;
 }
 
-.ver {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 0;
-}
-
-.ver strong {
-  font-size: 18px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  color: var(--fg);
-  letter-spacing: -0.01em;
-}
-
-.ver .num,
-.num {
+.ver-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
   font-family: var(--font-mono);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.banner {
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: var(--surface-2);
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.ver-chip.accent {
+  color: var(--accent);
+  border-color: color-mix(in oklch, var(--accent) 35%, var(--border));
+  background: var(--accent-soft);
+}
+
+.ver-arrow {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hero-hint {
+  margin: 2px 0 0;
+  max-width: 32em;
   font-size: 12px;
   color: var(--muted);
-  line-height: 1.5;
-}
-
-.banner strong {
-  color: var(--fg);
-  font-weight: 600;
-}
-
-.banner.ok {
-  border-color: color-mix(in oklch, var(--ok) 40%, var(--border));
-  background: var(--ok-soft);
-  color: var(--fg);
-}
-
-.banner.warn {
-  border-color: color-mix(in oklch, var(--warn) 40%, var(--border));
-  background: var(--warn-soft);
-  color: var(--fg);
-}
-
-.banner.danger {
-  border-color: color-mix(in oklch, var(--danger) 40%, var(--border));
-  background: var(--danger-soft);
-  color: var(--fg);
-}
-
-.banner.soft {
-  margin-top: 12px;
+  line-height: 1.55;
 }
 
 .download-block {
   display: flex;
   flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in oklch, var(--accent) 22%, var(--border));
+  background: color-mix(in oklch, var(--accent) 6%, var(--surface-2, var(--bg)));
 }
 
 .meter-row {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 12px;
-  margin: 0 0 6px;
   font-size: 12px;
-  color: var(--muted);
+}
+
+.meter-label {
+  min-width: 0;
+  color: var(--app-fg-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meter-pct {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--accent);
 }
 
 .progress {
-  height: 6px;
+  height: 8px;
   border-radius: 999px;
-  background: var(--bg);
+  background: color-mix(in oklch, var(--fg) 8%, var(--bg));
   border: 1px solid var(--border);
   overflow: hidden;
 }
@@ -565,55 +657,79 @@ const primaryDisabled = computed(() => {
 .progress > i {
   display: block;
   height: 100%;
-  background: var(--accent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--accent) 75%, white),
+    var(--accent)
+  );
   border-radius: inherit;
   transition: width 0.25s ease;
 }
 
-.notes {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.notes li {
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  font-size: 13px;
-  color: var(--fg);
-}
-
-.notes-h {
-  font-weight: 600;
+html.dark .progress > i {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--accent) 70%, black),
+    var(--accent)
+  );
 }
 
 .notes-wrap {
   min-height: 0;
-}
-
-.notes-scroll {
-  max-height: min(220px, 32vh);
-  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
+.notes-label {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.notes-scroll {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  height: auto;
+}
+
+.notes-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.notes {
+  margin: 0;
+  padding: 0 0 0 1.1em;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: disc;
+}
+
+.notes li {
+  font-size: 12px;
+  color: var(--fg);
+  line-height: 1.5;
+}
+
 .notes-heading {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--fg);
 }
 
 .notes-p {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--app-fg-secondary);
+  line-height: 1.5;
 }
 
 .notes :deep(code),
@@ -627,89 +743,92 @@ const primaryDisabled = computed(() => {
   color: var(--fg);
 }
 
-.update-idle {
+.preview-bar {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 8px;
-  padding: 20px 16px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--bg);
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border);
 }
 
-.update-idle-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--fg-soft);
-  color: var(--muted);
-}
-
-.update-idle.is-ok .update-idle-icon {
-  background: var(--ok-soft);
-  color: var(--ok);
-}
-
-.update-idle.is-danger .update-idle-icon {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-.update-idle.is-accent .update-idle-icon,
-.update-idle.is-info .update-idle-icon {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.update-idle.is-warn .update-idle-icon {
-  background: var(--warn-soft);
-  color: var(--warn);
-}
-
-.update-idle-title {
-  font-size: 15px;
+.preview-label {
+  font-size: 11px;
   font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.preview-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.preview-chip {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.preview-chip:hover {
   color: var(--fg);
+  border-color: color-mix(in oklch, var(--accent) 35%, var(--border));
 }
 
-.update-idle-ver {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.update-idle-hint {
-  margin: 0;
-  max-width: 36em;
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.5;
+.preview-chip.active {
+  color: var(--accent);
+  border-color: color-mix(in oklch, var(--accent) 40%, var(--border));
+  background: var(--accent-soft);
+  font-weight: 600;
 }
 
 .dlg-foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
   width: 100%;
 }
 
-.dlg-foot-hint {
-  margin-right: auto;
-  font-size: 12px;
-  color: var(--muted);
-  max-width: 55%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.dlg-foot.is-solo {
+  grid-template-columns: 1fr;
+}
+
+.dlg-foot :deep(.el-button) {
+  margin: 0;
+  width: 100%;
+  height: 36px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.dlg-foot :deep(.btn-secondary) {
+  --el-button-bg-color: color-mix(in oklch, var(--fg) 3%, var(--panel-bg));
+  --el-button-border-color: var(--border);
+  --el-button-text-color: var(--fg);
+  --el-button-hover-bg-color: color-mix(in oklch, var(--fg) 6%, var(--panel-bg));
+  --el-button-hover-border-color: color-mix(in oklch, var(--accent) 28%, var(--border));
+  --el-button-hover-text-color: var(--fg);
+  --el-button-active-bg-color: color-mix(in oklch, var(--fg) 8%, var(--panel-bg));
+  --el-button-active-border-color: color-mix(in oklch, var(--accent) 35%, var(--border));
+  --el-button-active-text-color: var(--fg);
+}
+
+.dlg-foot :deep(.btn-primary) {
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--fg) 8%, transparent);
+}
+
+.dlg-foot :deep(.btn-primary.is-disabled),
+.dlg-foot :deep(.btn-primary.is-loading) {
+  box-shadow: none;
 }
 
 .update-status-spin {

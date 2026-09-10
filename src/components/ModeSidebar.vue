@@ -46,23 +46,25 @@ function selectMode(mode: TaskMode): void {
 
 <template>
   <aside aria-label="任务模式" class="mode-sidebar">
-    <nav class="mode-sidebar-nav">
-      <div v-for="group in groups" :key="group.value" class="nav-group">
-        <div class="nav-label">{{ group.label }}</div>
-        <button
-          v-for="mode in group.modes"
-          :key="mode.value"
-          :aria-current="taskMode === mode.value ? 'page' : undefined"
-          :class="{ active: taskMode === mode.value }"
-          class="nav-item"
-          type="button"
-          @click="selectMode(mode.value)"
-        >
-          <span class="nav-item-label">{{ mode.label }}</span>
-          <span v-if="mode.badge" class="nav-badge">{{ mode.badge }}</span>
-        </button>
-      </div>
-    </nav>
+    <el-scrollbar class="mode-sidebar-nav">
+      <nav aria-label="模式列表">
+        <div v-for="group in groups" :key="group.value" class="nav-group">
+          <div class="nav-label">{{ group.label }}</div>
+          <button
+            v-for="mode in group.modes"
+            :key="mode.value"
+            :aria-current="taskMode === mode.value ? 'page' : undefined"
+            :class="{ active: taskMode === mode.value }"
+            class="nav-item"
+            type="button"
+            @click="selectMode(mode.value)"
+          >
+            <span class="nav-item-label">{{ mode.label }}</span>
+            <span v-if="mode.badge" class="nav-badge">{{ mode.badge }}</span>
+          </button>
+        </div>
+      </nav>
+    </el-scrollbar>
     <div class="sidebar-foot">
       v{{ appVersion }} · 并发 {{ concurrency }}
     </div>
@@ -83,7 +85,10 @@ function selectMode(mode: TaskMode): void {
 .mode-sidebar-nav {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  height: auto;
+}
+
+.mode-sidebar-nav :deep(.el-scrollbar__view) {
   padding: 8px 0 4px;
 }
 

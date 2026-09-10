@@ -261,7 +261,7 @@ watch(
         <div class="side-h">
           <span>区域列表 · {{ rules.length }}</span>
         </div>
-        <div v-if="rules.length" class="region-list">
+        <el-scrollbar v-if="rules.length" class="region-list">
           <div v-for="(rule, index) in rules" :key="rule.id" class="region-card">
             <div class="region-main">
               <div class="region-name">
@@ -276,7 +276,7 @@ watch(
               删除
             </el-button>
           </div>
-        </div>
+        </el-scrollbar>
         <div v-else class="region-empty">框选后点「添加区域」写入列表</div>
       </aside>
     </div>
@@ -404,7 +404,11 @@ watch(
 }
 
 .region-list {
-  overflow: auto;
+  height: 100%;
+  min-height: 0;
+}
+
+.region-list :deep(.el-scrollbar__view) {
   padding: 8px;
   display: flex;
   flex-direction: column;

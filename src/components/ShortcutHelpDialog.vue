@@ -95,7 +95,11 @@ const tips = [
         </button>
       </div>
 
-      <div v-show="activeTab === 'shortcuts'" class="help-panel thin-scrollbar">
+      <el-scrollbar
+        v-show="activeTab === 'shortcuts'"
+        class="help-panel"
+        max-height="min(420px, 54vh)"
+      >
         <div class="help-grid">
           <div>
             <div class="section-label">全局</div>
@@ -134,9 +138,13 @@ const tips = [
             </div>
           </div>
         </div>
-      </div>
+      </el-scrollbar>
 
-      <div v-show="activeTab === 'guide'" class="help-panel thin-scrollbar">
+      <el-scrollbar
+        v-show="activeTab === 'guide'"
+        class="help-panel"
+        max-height="min(420px, 54vh)"
+      >
         <div class="help-list">
           <div v-for="(step, i) in guideSteps" :key="i" class="help-item">
             <strong>{{ i + 1 }}. {{ step.title }}</strong>
@@ -147,7 +155,7 @@ const tips = [
         <ul class="help-tips">
           <li v-for="(t, i) in tips" :key="i">{{ t }}</li>
         </ul>
-      </div>
+      </el-scrollbar>
     </div>
 
     <template #footer>
@@ -227,9 +235,8 @@ const tips = [
 
 .help-panel {
   flex: 1 1 auto;
-  max-height: min(420px, 54vh);
   min-height: min(220px, 30vh);
-  overflow: auto;
+  height: auto;
 }
 
 .help-grid {
