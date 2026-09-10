@@ -944,8 +944,11 @@ html[data-theme="light"] .btn-theme .theme-icon-moon {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  text-overflow: ellipsis;
   text-align: center;
   line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .workbench-side .grid {
@@ -1158,6 +1161,10 @@ html[data-theme="light"] .btn-theme .theme-icon-moon {
   gap: 12px;
   padding: 18px 14px;
   pointer-events: none;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .dropzone-icon {
@@ -1184,15 +1191,20 @@ html[data-theme="light"] .btn-theme .theme-icon-moon {
   flex-direction: column;
   gap: 3px;
   min-width: 0;
+  flex: 1;
+  overflow: hidden;
 }
 
 .file-name {
   font-size: 13px;
   font-weight: 600;
   color: var(--fg);
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .file-hint {
@@ -1235,6 +1247,14 @@ html[data-theme="light"] .btn-theme .theme-icon-moon {
   font-size: 12px;
   line-height: 1.5;
   color: var(--fg-muted);
+}
+
+.opts-field-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 400;
 }
 
 .opts-custom {
@@ -1356,6 +1376,7 @@ html[data-theme="light"] .btn-theme .theme-icon-moon {
 
 .task-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -1365,6 +1386,33 @@ html[data-theme="light"] .btn-theme .theme-icon-moon {
   text-align: left;
   padding: 12px 12px;
   vertical-align: middle;
+}
+
+.task-table th:first-child,
+.task-table td:first-child {
+  width: 42%;
+  max-width: 0;
+  overflow: hidden;
+}
+
+.task-table th:nth-child(2),
+.task-table td:nth-child(2) {
+  width: 16%;
+}
+
+.task-table th:nth-child(3),
+.task-table td:nth-child(3) {
+  width: 18%;
+}
+
+.task-table th:nth-child(4),
+.task-table td:nth-child(4) {
+  width: 12%;
+}
+
+.task-table th:nth-child(5),
+.task-table td:nth-child(5) {
+  width: 12%;
 }
 
 .task-table thead th {
@@ -1400,7 +1448,8 @@ html[data-theme="light"] .btn-theme .theme-icon-moon {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  max-width: 380px;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .task-thumb-btn {
@@ -1443,18 +1492,41 @@ html[data-theme="light"] .btn-theme .theme-icon-moon {
 }
 
 .task-thumb-ph {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 42px;
   height: 42px;
   border-radius: 8px;
   border: 1px solid var(--border-soft);
   flex-shrink: 0;
   background: var(--thumb-ph-bg);
+  color: var(--fg-muted);
 }
 
 .task-thumb-ph.is-audio {
-  background: linear-gradient(145deg, rgba(230, 162, 60, 0.16), var(--surface-2));
+  color: var(--warn);
+  background: var(--warn-soft, rgba(230, 162, 60, 0.12));
   border-color: rgba(230, 162, 60, 0.22);
+}
+
+.task-thumb-ph__icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
+.task-thumb-btn.is-audio {
+  cursor: pointer;
+}
+
+.task-thumb-btn.is-audio:hover .task-thumb-ph.is-audio {
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+  box-shadow: 0 0 0 2px rgba(230, 162, 60, 0.16);
+}
+
+.task-thumb-btn.is-playable:hover .task-thumb {
+  border-color: color-mix(in srgb, var(--primary-solid) 55%, transparent);
 }
 
 body.lightbox-open {
@@ -1530,6 +1602,7 @@ body.lightbox-open {
   min-height: 240px;
   max-height: min(78vh, 760px);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   background: var(--lightbox-body-bg);
@@ -1537,12 +1610,53 @@ body.lightbox-open {
   padding: 16px;
 }
 
-.thumb-lightbox-img {
+.thumb-lightbox-img,
+.thumb-lightbox-video {
   max-width: 100%;
   max-height: min(72vh, 720px);
   object-fit: contain;
   border-radius: 8px;
   display: block;
+  background: #000;
+}
+
+.thumb-lightbox-video {
+  width: min(100%, 880px);
+}
+
+.thumb-lightbox-audio-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  width: min(100%, 420px);
+  padding: 28px 20px;
+}
+
+/* 作者样式的 display 会盖掉原生 [hidden]，必须显式隐藏 */
+.thumb-lightbox-img[hidden],
+.thumb-lightbox-video[hidden],
+.thumb-lightbox-audio-wrap[hidden],
+.thumb-lightbox-audio[hidden],
+.thumb-lightbox-loading[hidden] {
+  display: none !important;
+}
+
+.thumb-lightbox-audio-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--warn);
+  background: var(--warn-soft, rgba(230, 162, 60, 0.14));
+  border: 1px solid rgba(230, 162, 60, 0.24);
+}
+
+.thumb-lightbox-audio {
+  width: 100%;
 }
 
 .thumb-lightbox-loading {
@@ -1573,6 +1687,37 @@ body.lightbox-open {
   content: '预览加载失败';
 }
 
+.thumb-lightbox-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  z-index: 2;
+  max-width: min(100%, 400px);
+  padding: 16px 18px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.thumb-lightbox-fallback[hidden] {
+  display: none !important;
+}
+
+.thumb-lightbox-fallback-msg {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--fg-secondary);
+}
+
+.thumb-lightbox-body.has-media-fallback {
+  flex-direction: column;
+  gap: 14px;
+}
+
 @keyframes thumb-lightbox-spin {
   to {
     transform: rotate(360deg);
@@ -1590,9 +1735,12 @@ body.lightbox-open {
 .task-file-name {
   font-weight: 600;
   font-size: 13px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .mode-tag {
@@ -1893,7 +2041,12 @@ body.lightbox-open {
   }
 
   .task-file-row {
-    max-width: 180px;
+    max-width: 100%;
+  }
+
+  .task-table th:first-child,
+  .task-table td:first-child {
+    width: 38%;
   }
 
   .task-thumb,
@@ -1939,5 +2092,45 @@ body.lightbox-open {
 
   .stat-label {
     font-size: 11px;
+  }
+}
+
+/* 自定义 tip（替代原生 title） */
+.qy-tip {
+  position: fixed;
+  z-index: 1100;
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--panel-elevated, #1e222b);
+  color: var(--fg, #e8eaed);
+  border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.18));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition:
+    opacity 0.12s ease-out,
+    transform 0.12s ease-out;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.qy-tip.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+[data-theme='light'] .qy-tip {
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qy-tip {
+    transition: none;
   }
 }

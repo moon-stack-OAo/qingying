@@ -731,8 +731,16 @@ export interface LanTaskView {
   speed?: string
   etaSec?: number
   mode?: TaskMode
-  /** 是否可下载 */
+  /** 是否可下载（仅 completed 输出） */
   downloadable: boolean
+  /**
+   * 是否可请求 `/media`：
+   * - 已完成且输出存在（视频压缩 / 抽音频）
+   * - 或音频任务且上传源仍在白名单内（未完成可预听源文件）
+   */
+  playable?: boolean
+  /** 可播放媒体的 MIME（由实际流文件扩展名推断，供 canPlayType） */
+  mediaMime?: string
   /** 是否可请求缩略图（视频/图片；音频为 false） */
   hasThumbnail?: boolean
 }

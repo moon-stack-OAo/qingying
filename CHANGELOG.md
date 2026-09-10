@@ -19,12 +19,16 @@
 
 ### 优化
 
+- **局域网上传任务不进桌面列表**：LAN 入队改走 `enqueueLan`，进度/结束/排队事件仍走 SSE 与队列监听，但不向主窗口推 `TASK_*`；桌面「取消全部」只取消桌面任务；完成系统通知不统计 LAN；退出时仍硬停全部
+- **局域网 SSE 实时进度**：`GET /api/tasks/events`（需登录）推送 `snapshot` / `progress` / `end` / `queued`；Web 页用 EventSource 局部更新进度条，保留 CSS transition；进度约 150ms / 0.5% 节流，每 IP ≤3 路 SSE；断线自动重连并以低频轮询兜底
 - **页面标题与品牌同源**：`index.html` 标题由 electron-vite 从 `shared/brand.ts` 的 `PRODUCT_NAME` 注入
 - **拖拽路径工具下沉**：`fileUrlToPath` / `pathBasename` / `isUncPath` 抽至 `shared/pathUtils`，preload 与 `useDragDrop` 共用
 - **任务恢复跳过 UNC `existsSync`**：`taskStore` 对 UNC 源路径不在启动时同步探测，避免卡死（与队列入队策略一致）
 - **chore：拆分 lanServer handlers**：`electron/main/lanServer/index.ts` 拆为 `context` / `httpUtil` / `paths` / `taskUtil` 与 `handlers/*`，对外 API 不变
 - **局域网 Web UI**：按 `docs/lan-web/DESIGN.md` 落地暗色工具风；补焦点环 / lightbox 焦点管理、进度状态色、响应式断点与触控热区
 - **局域网登录记住密码**：可选将用户名与密码存于本机浏览器 `localStorage`，下次自动回填（仅适合受信设备）
+- **局域网预览增强**：完成后视频/音频可在 lightbox 内播放（`/api/tasks/:id/media` 支持 Range）；音频任务列表使用音符 SVG 占位并可点播
+- **局域网预览能力检测与源预听**：lightbox 用 `canPlayType` 降级（提示 + 下载；视频回退抽帧图）；音频未完成且源仍在时可预听；`LanTaskView` 增补 `mediaMime` / 扩展 `playable`
 
 ### 文档
 

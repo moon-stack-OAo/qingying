@@ -25,3 +25,39 @@ export function shouldNotifyCancelOnDrop(
 ): boolean {
   return reason === 'cancelled'
 }
+
+/** LAN 任务不向桌面主窗口推 TASK_* IPC（仍走 listeners / SSE） */
+export function shouldSendTaskIpcToDesktop(
+  taskId: string | undefined,
+  lanTaskIds: ReadonlySet<string>
+): boolean {
+  if (!taskId) return true
+  return !lanTaskIds.has(taskId)
+}
+
+/** 系统完成通知 / 批次统计排除 LAN */
+export function shouldCountInBatchNotify(
+  taskId: string,
+  lanTaskIds: ReadonlySet<string>
+): boolean {
+  return !lanTaskIds.has(taskId)
+}
+
+/**
+ * cancelAll 候选 id：默认只取消桌面；includeLan 时全清（退出等硬停）。
+ */
+export function filterCancelAllTaskIds(
+  ids: readonly string[],
+  lanTaskIds: ReadonlySet<string>,
+  includeLan: boolean
+): string[] {
+  if (includeLan) return Array.from(new Set(ids))
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const id of ids) {
+    if (lanTaskIds.has(id) || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}

@@ -5,13 +5,16 @@ import {getSettings, saveSettings} from '../settings'
 import {DEFAULT_LAN_PORT, lanCtx} from './context'
 import {handleLogin, handleLogout} from './handlers/auth'
 import {handleDownload} from './handlers/download'
+import {handleMedia} from './handlers/media'
 import {serveStatic} from './handlers/static'
 import {handleStatus} from './handlers/status'
+import {handleTaskEvents} from './handlers/events'
 import {handleCreateTask, handleListTasks} from './handlers/tasks'
 import {handleThumbnail} from './handlers/thumbnail'
 import {json} from './httpUtil'
 import {ensureUploadsDir, normalizeBindHost} from './paths'
 import {hashPassword, validateLanPassword} from './password'
+import {closeAllSseClients} from './sse'
 import {attachQueueListener} from './taskUtil'
 
 export {DEFAULT_LAN_PORT}
@@ -100,6 +103,10 @@ async function handleRequest(
       handleListTasks(req, res)
       return
     }
+    if (pathOnly === '/api/tasks/events' && method === 'GET') {
+      handleTaskEvents(req, res)
+      return
+    }
     if (pathOnly === '/api/tasks' && method === 'POST') {
       await handleCreateTask(req, res)
       return
@@ -108,6 +115,12 @@ async function handleRequest(
     const dl = /^\/api\/tasks\/([^/]+)\/download$/.exec(pathOnly)
     if (dl && method === 'GET') {
       handleDownload(req, res, decodeURIComponent(dl[1]))
+      return
+    }
+
+    const media = /^\/api\/tasks\/([^/]+)\/media$/.exec(pathOnly)
+    if (media && method === 'GET') {
+      handleMedia(req, res, decodeURIComponent(media[1]))
       return
     }
 
@@ -204,6 +217,7 @@ export function startLanServer(port?: number): Promise<LanStatus> {
  * 停止服务并清除会话
  */
 export function stopLanServer(): LanStatus {
+  closeAllSseClients()
   if (lanCtx.server) {
     try {
       lanCtx.server.close()

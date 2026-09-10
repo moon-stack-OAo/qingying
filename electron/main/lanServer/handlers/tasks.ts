@@ -280,13 +280,7 @@ export async function handleCreateTask(
   }
 
   lanCtx.lanTasks.set(taskId, {task, fromLan: true})
-  taskQueue.enqueue(task)
-  // 同步到桌面 UI
-  taskQueue.notifyTaskAdded({
-    ...task,
-    status: 'queued',
-    progress: 0
-  })
+  taskQueue.enqueueLan(task)
 
   json(res, 200, {ok: true, task: toLanView(lanCtx.lanTasks.get(taskId)!.task)})
 }

@@ -25,6 +25,10 @@ import {getSettings} from '../settings'
 import {taskQueue} from '../taskQueue'
 import {LAN_NAME_TEMPLATE, lanCtx} from './context'
 import {cleanupLanUploadSource, lanMediaAllowedRoots} from './paths'
+import {
+  broadcastProgress,
+  broadcastTaskView
+} from './sse'
 
 type ImageOutputFormat = 'jpeg' | 'png' | 'webp' | 'keep'
 
@@ -62,6 +66,50 @@ export function isAllowedExt(fileName: string): boolean {
   return ALLOWED_EXTENSIONS.has(ext)
 }
 
+export function guessLanMime(name: string): string {
+  const ext = path.extname(name).toLowerCase()
+  const map: Record<string, string> = {
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
+    '.mkv': 'video/x-matroska',
+    '.mov': 'video/quicktime',
+    '.m4v': 'video/mp4',
+    '.mp3': 'audio/mpeg',
+    '.m4a': 'audio/mp4',
+    '.aac': 'audio/aac',
+    '.opus': 'audio/opus',
+    '.ogg': 'audio/ogg',
+    '.wav': 'audio/wav',
+    '.flac': 'audio/flac',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.bmp': 'image/bmp',
+    '.gif': 'image/gif',
+    '.tif': 'image/tiff',
+    '.tiff': 'image/tiff'
+  }
+  return map[ext] || 'application/octet-stream'
+}
+
+function isExistingAllowedFile(
+  raw: string | undefined,
+  allowedRoots: string[]
+): string | null {
+  const p = typeof raw === 'string' ? raw.trim() : ''
+  if (!p) return null
+  const resolved = path.resolve(p)
+  if (!isPathInsideAnyRoot(allowedRoots, resolved)) return null
+  if (!fs.existsSync(resolved)) return null
+  try {
+    if (!fs.statSync(resolved).isFile()) return null
+  } catch {
+    return null
+  }
+  return resolved
+}
+
 export function taskHasThumbnail(task: CompressTask): boolean {
   if (task.options?.mode === 'audio') return false
   const p =
@@ -83,17 +131,46 @@ export function resolveThumbSourcePath(task: CompressTask): string | null {
     task.status === 'completed' ? task.outputPath : ''
   ]
   for (const raw of candidates) {
-    const p = typeof raw === 'string' ? raw.trim() : ''
-    if (!p) continue
-    const resolved = path.resolve(p)
-    if (!isPathInsideAnyRoot(allowedRoots, resolved)) continue
-    if (!fs.existsSync(resolved)) continue
-    try {
-      if (!fs.statSync(resolved).isFile()) continue
-    } catch {
-      continue
-    }
+    const resolved = isExistingAllowedFile(
+      typeof raw === 'string' ? raw : undefined,
+      allowedRoots
+    )
+    if (!resolved) continue
     if (isImageExt(resolved) || isVideoExt(resolved)) return resolved
+  }
+  return null
+}
+
+/**
+ * 页内播放路径：输出优先；未完成时仅音频允许白名单内输入源。
+ * 视频未完成不返回源（列表继续看抽帧图）。
+ */
+export function resolveMediaSourcePath(task: CompressTask): string | null {
+  const mode = task.options?.mode
+  if (mode === 'image') return null
+
+  if (task.status === 'completed' && task.outputPath) {
+    const out = isExistingAllowedFile(
+      task.outputPath,
+      lanMediaAllowedRoots(false)
+    )
+    if (out) return out
+  }
+
+  if (mode !== 'audio') return null
+
+  const allowedRoots = lanMediaAllowedRoots(true)
+  const candidates = [
+    ...(Array.isArray(task.inputPaths) ? task.inputPaths : []),
+    task.inputPath
+  ]
+  for (const raw of candidates) {
+    const resolved = isExistingAllowedFile(
+      typeof raw === 'string' ? raw : undefined,
+      allowedRoots
+    )
+    // 抽音频源常为视频容器；白名单内存在即可
+    if (resolved) return resolved
   }
   return null
 }
@@ -123,6 +200,11 @@ export function toLanView(task: CompressTask): LanTaskView {
     task.status === 'completed' &&
     Boolean(task.outputPath) &&
     fs.existsSync(task.outputPath)
+  const mode = task.options?.mode
+  const mediaPath = resolveMediaSourcePath(task)
+  const playable =
+    Boolean(mediaPath) &&
+    (mode === 'compress' || mode === 'audio' || mode == null)
   return {
     id: task.id,
     fileName: task.fileName,
@@ -134,8 +216,10 @@ export function toLanView(task: CompressTask): LanTaskView {
     time: task.time,
     speed: task.speed,
     etaSec: task.etaSec,
-    mode: task.options?.mode,
+    mode,
     downloadable,
+    playable,
+    mediaMime: mediaPath ? guessLanMime(mediaPath) : undefined,
     hasThumbnail: taskHasThumbnail(task)
   }
 }
@@ -359,6 +443,14 @@ function updateLanTaskFromProgress(p: ProgressPayload): void {
     speed: p.speed,
     etaSec: p.etaSec
   }
+  broadcastProgress({
+    id: p.taskId,
+    progress: p.percent,
+    status: 'running',
+    time: p.time,
+    speed: p.speed,
+    etaSec: p.etaSec
+  })
 }
 
 function updateLanTaskFromEnd(p: TaskEndPayload): void {
@@ -385,6 +477,7 @@ function updateLanTaskFromEnd(p: TaskEndPayload): void {
   ) {
     cleanupLanUploadSource(rec.task)
   }
+  broadcastTaskView('end', toLanView(rec.task))
 }
 
 export function attachQueueListener(): void {
@@ -396,6 +489,7 @@ export function attachQueueListener(): void {
       const rec = lanCtx.lanTasks.get(taskId)
       if (rec) {
         rec.task = {...task, status: 'queued'}
+        broadcastTaskView('queued', toLanView(rec.task))
       }
     }
   })

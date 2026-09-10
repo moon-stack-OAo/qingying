@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   clampTaskConcurrency,
+  filterCancelAllTaskIds,
   isStaleQueueItem,
-  shouldNotifyCancelOnDrop
+  shouldCountInBatchNotify,
+  shouldNotifyCancelOnDrop,
+  shouldSendTaskIpcToDesktop
 } from '@shared/taskQueueLogic'
 
 describe('taskQueue 纯逻辑', () => {
@@ -44,6 +47,31 @@ describe('taskQueue 纯逻辑', () => {
       const oldItem = { id: 'old' }
       const running = new Map<string, typeof oldItem>()
       expect(isStaleQueueItem('t1', oldItem, running)).toBe(true)
+    })
+  })
+
+  describe('LAN 分流', () => {
+    const lan = new Set(['lan-1', 'lan-2'])
+
+    it('shouldSendTaskIpcToDesktop：LAN 不推桌面', () => {
+      expect(shouldSendTaskIpcToDesktop(undefined, lan)).toBe(true)
+      expect(shouldSendTaskIpcToDesktop('desk-1', lan)).toBe(true)
+      expect(shouldSendTaskIpcToDesktop('lan-1', lan)).toBe(false)
+    })
+
+    it('shouldCountInBatchNotify：排除 LAN', () => {
+      expect(shouldCountInBatchNotify('desk-1', lan)).toBe(true)
+      expect(shouldCountInBatchNotify('lan-2', lan)).toBe(false)
+    })
+
+    it('filterCancelAllTaskIds：默认只桌面；includeLan 全清', () => {
+      const ids = ['desk-1', 'lan-1', 'desk-1', 'lan-2']
+      expect(filterCancelAllTaskIds(ids, lan, false)).toEqual(['desk-1'])
+      expect(filterCancelAllTaskIds(ids, lan, true).sort()).toEqual([
+        'desk-1',
+        'lan-1',
+        'lan-2'
+      ])
     })
   })
 })

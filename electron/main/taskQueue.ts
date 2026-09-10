@@ -10,8 +10,11 @@ import { IpcChannels } from '../../shared/types'
 import { isImageMode } from '../../shared/ffmpegLogic'
 import {
   clampTaskConcurrency,
+  filterCancelAllTaskIds,
   isStaleQueueItem,
-  shouldNotifyCancelOnDrop
+  shouldCountInBatchNotify,
+  shouldNotifyCancelOnDrop,
+  shouldSendTaskIpcToDesktop
 } from '../../shared/taskQueueLogic'
 import {
   buildOutputPath,
@@ -58,8 +61,10 @@ export class TaskQueue {
   /** pumping 期间又有入队/取消时置位，结束再扫一轮 */
   private pumpDirty = false
   private listeners = new Set<TaskQueueListener>()
+  /** 局域网上传任务 id：不进桌面列表 / 不计入完成通知；cancelAll 默认跳过 */
+  private lanTaskIds = new Set<string>()
 
-  /** 本批统计（running+queue 从 >0 变为 0 时汇总） */
+  /** 本批统计（running+queue 从 >0 变为 0 时汇总；不含 LAN） */
   private batchCompleted = 0
   private batchFailed = 0
   private batchCancelled = 0
@@ -230,9 +235,14 @@ export class TaskQueue {
     return { ok: true }
   }
 
-  enqueue(task: CompressTask): void {
+  enqueue(task: CompressTask, opts?: { fromLan?: boolean }): void {
     // 同 id 再入队：释放旧 running / 去掉旧 queued，避免僵尸任务占满并发导致一直「排队中」
     this.dropExisting(task.id, 'replaced')
+    if (opts?.fromLan) {
+      this.lanTaskIds.add(task.id)
+    } else {
+      this.lanTaskIds.delete(task.id)
+    }
 
     const paths = this.resolveInputPaths(task)
     const primaryInput = paths[0] || task.inputPath
@@ -262,6 +272,11 @@ export class TaskQueue {
     void this.pump()
   }
 
+  /** 局域网上传专用入队：共用并发槽，但不向桌面推 TASK_* */
+  enqueueLan(task: CompressTask): void {
+    this.enqueue(task, { fromLan: true })
+  }
+
   /**
    * 去掉同 id 的排队项；若正在跑则发取消信号并立即释放并发槽。
    * @param reason replaced=被同 id 新任务替换（不向 UI 报取消）；cancelled=用户取消
@@ -270,12 +285,13 @@ export class TaskQueue {
     taskId: string,
     reason: 'replaced' | 'cancelled'
   ): void {
+    const countBatch = shouldCountInBatchNotify(taskId, this.lanTaskIds)
     const running = this.running.get(taskId)
     if (running) {
       running.signal.cancelled = true
       this.running.delete(taskId)
       if (shouldNotifyCancelOnDrop(reason)) {
-        this.batchCancelled += 1
+        if (countBatch) this.batchCancelled += 1
         this.send(IpcChannels.TASK_END, {
           taskId,
           status: 'cancelled',
@@ -288,7 +304,7 @@ export class TaskQueue {
       if (this.queue[i].task.id !== taskId) continue
       const [item] = this.queue.splice(i, 1)
       if (shouldNotifyCancelOnDrop(reason)) {
-        this.batchCancelled += 1
+        if (countBatch) this.batchCancelled += 1
         this.send(IpcChannels.TASK_END, {
           taskId: item.task.id,
           status: 'cancelled',
@@ -300,7 +316,7 @@ export class TaskQueue {
   }
 
   /**
-   * 向渲染进程推送完整任务（局域网上传入队时，桌面 UI 同步列表）
+   * 向渲染进程推送完整任务（仅桌面侧需要同步列表时使用；LAN 勿调用）
    */
   notifyTaskAdded(task: CompressTask): void {
     this.send(IpcChannels.TASK_ADDED, task)
@@ -322,12 +338,17 @@ export class TaskQueue {
     }
   }
 
-  cancelAll(): void {
-    const ids = Array.from(
-      new Set([
+  /**
+   * @param includeLan true=退出等硬停清全部；false/缺省=仅桌面（IPC 取消全部）
+   */
+  cancelAll(includeLan = false): void {
+    const ids = filterCancelAllTaskIds(
+      [
         ...Array.from(this.running.keys()),
         ...this.queue.map((q) => q.task.id)
-      ])
+      ],
+      this.lanTaskIds,
+      includeLan
     )
     for (const id of ids) {
       this.dropExisting(id, 'cancelled')
@@ -336,11 +357,33 @@ export class TaskQueue {
     void this.pump()
   }
 
+  private taskIdFromIpcPayload(
+    channel: string,
+    payload: unknown
+  ): string | undefined {
+    if (channel === IpcChannels.TASK_QUEUED && typeof payload === 'string') {
+      return payload
+    }
+    if (payload && typeof payload === 'object') {
+      const rec = payload as { taskId?: unknown; id?: unknown }
+      if (typeof rec.taskId === 'string') return rec.taskId
+      if (channel === IpcChannels.TASK_ADDED && typeof rec.id === 'string') {
+        return rec.id
+      }
+    }
+    return undefined
+  }
+
   private send(channel: string, payload: unknown): void {
-    if (this.win && !this.win.isDestroyed()) {
+    const taskId = this.taskIdFromIpcPayload(channel, payload)
+    if (
+      shouldSendTaskIpcToDesktop(taskId, this.lanTaskIds) &&
+      this.win &&
+      !this.win.isDestroyed()
+    ) {
       this.win.webContents.send(channel, payload)
     }
-    // 同步外部监听（局域网服务等）
+    // 同步外部监听（局域网 SSE 等）；LAN 任务也必须走到这里
     if (channel === IpcChannels.TASK_PROGRESS) {
       Array.from(this.listeners).forEach((l) => {
         try {
@@ -357,6 +400,7 @@ export class TaskQueue {
           console.warn('[taskQueue] onEnd listener error:', err)
         }
       })
+      if (taskId) this.lanTaskIds.delete(taskId)
     }
   }
 
@@ -401,8 +445,9 @@ export class TaskQueue {
     if (isStaleQueueItem(task.id, item, this.running)) {
       return
     }
+    const countBatch = shouldCountInBatchNotify(task.id, this.lanTaskIds)
     if (result.code === -1 || signal.cancelled) {
-      this.batchCancelled += 1
+      if (countBatch) this.batchCancelled += 1
       this.send(IpcChannels.TASK_END, {
         taskId: task.id,
         status: 'cancelled',
@@ -413,10 +458,12 @@ export class TaskQueue {
         commandLine: result.commandLine
       } satisfies TaskEndPayload)
     } else if (result.code === 0) {
-      this.batchCompleted += 1
-      this.lastCompletedOutput = task.outputPath
-      this.lastCompletedName =
-        task.fileName || path.basename(task.inputPath)
+      if (countBatch) {
+        this.batchCompleted += 1
+        this.lastCompletedOutput = task.outputPath
+        this.lastCompletedName =
+          task.fileName || path.basename(task.inputPath)
+      }
       this.send(IpcChannels.TASK_END, {
         taskId: task.id,
         status: 'completed',
@@ -428,8 +475,10 @@ export class TaskQueue {
         commandLine: result.commandLine
       } satisfies TaskEndPayload)
     } else {
-      this.batchFailed += 1
-      this.lastFailedError = result.error || '处理失败'
+      if (countBatch) {
+        this.batchFailed += 1
+        this.lastFailedError = result.error || '处理失败'
+      }
       this.send(IpcChannels.TASK_END, {
         taskId: task.id,
         status: 'failed',
@@ -687,8 +736,10 @@ export class TaskQueue {
     } catch (e) {
       if (!isCurrent()) return
       const msg = e instanceof Error ? e.message : String(e)
-      this.batchFailed += 1
-      this.lastFailedError = msg
+      if (shouldCountInBatchNotify(task.id, this.lanTaskIds)) {
+        this.batchFailed += 1
+        this.lastFailedError = msg
+      }
       this.send(IpcChannels.TASK_END, {
         taskId: task.id,
         status: 'failed',

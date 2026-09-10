@@ -69,9 +69,17 @@
   const FILE_PLACEHOLDER = '点击或拖拽文件到此处'
   const THEME_KEY = 'qy-lan-theme'
   const CRED_KEY = 'qy-lan-creds'
+  /** SSE 未连接时的轮询间隔 */
+  const POLL_FALLBACK_MS = 2000
+  /** SSE 已连接时的慢速校正间隔 */
+  const POLL_SSE_MS = 12000
   let pollTimer = null
+  let taskEvents = null
+  let sseConnected = false
   let authenticated = false
   let loadTasksFailStreak = 0
+  /** 最近一次完整任务列表（供局部更新后刷新统计） */
+  let lastTasks = []
 
   function readStoredTheme() {
     try {
@@ -141,10 +149,159 @@
     }
     const btn = $('btn-theme')
     if (btn) {
+      const tip = next === 'dark' ? '切换到浅色' : '切换到深色'
       btn.setAttribute('aria-label', next === 'dark' ? '切换浅色主题' : '切换深色主题')
-      btn.title = next === 'dark' ? '切换到浅色' : '切换到深色'
+      btn.setAttribute('data-tip', tip)
+      btn.removeAttribute('title')
     }
   }
+
+  /** 自定义 tip：用 data-tip，避免原生 title */
+  const tipEl = document.createElement('div')
+  tipEl.className = 'qy-tip'
+  tipEl.setAttribute('role', 'tooltip')
+  tipEl.hidden = true
+  document.body.appendChild(tipEl)
+  let tipAnchor = null
+  let tipShowTimer = null
+  let tipHideTimer = null
+
+  function hideTip(immediate) {
+    if (tipShowTimer) {
+      clearTimeout(tipShowTimer)
+      tipShowTimer = null
+    }
+    const doHide = () => {
+      tipEl.classList.remove('is-visible')
+      tipEl.hidden = true
+      tipEl.textContent = ''
+      tipAnchor = null
+      tipHideTimer = null
+    }
+    if (immediate) {
+      if (tipHideTimer) {
+        clearTimeout(tipHideTimer)
+        tipHideTimer = null
+      }
+      doHide()
+      return
+    }
+    if (tipHideTimer) return
+    tipHideTimer = setTimeout(doHide, 80)
+  }
+
+  function positionTip(anchor) {
+    if (!anchor || tipEl.hidden) return
+    const rect = anchor.getBoundingClientRect()
+    const gap = 8
+    const pad = 12
+    tipEl.style.left = '0px'
+    tipEl.style.top = '0px'
+    const tw = tipEl.offsetWidth
+    const th = tipEl.offsetHeight
+    let left = rect.left + rect.width / 2 - tw / 2
+    let top = rect.top - th - gap
+    if (top < pad) top = rect.bottom + gap
+    left = Math.min(Math.max(pad, left), window.innerWidth - tw - pad)
+    top = Math.min(Math.max(pad, top), window.innerHeight - th - pad)
+    tipEl.style.left = Math.round(left) + 'px'
+    tipEl.style.top = Math.round(top) + 'px'
+  }
+
+  function showTipFor(anchor) {
+    if (!anchor) return
+    const text = (anchor.getAttribute('data-tip') || '').trim()
+    if (!text) return
+    if (tipHideTimer) {
+      clearTimeout(tipHideTimer)
+      tipHideTimer = null
+    }
+    tipAnchor = anchor
+    tipEl.textContent = text
+    tipEl.hidden = false
+    positionTip(anchor)
+    requestAnimationFrame(() => {
+      if (tipAnchor === anchor) tipEl.classList.add('is-visible')
+    })
+  }
+
+  function scheduleTip(anchor) {
+    if (tipShowTimer) clearTimeout(tipShowTimer)
+    tipShowTimer = setTimeout(() => {
+      tipShowTimer = null
+      showTipFor(anchor)
+    }, 280)
+  }
+
+  function findTipTarget(node) {
+    if (!node || !node.closest) return null
+    return node.closest('[data-tip]')
+  }
+
+  document.addEventListener(
+    'pointerover',
+    (e) => {
+      const target = findTipTarget(e.target)
+      if (!target) return
+      if (tipAnchor === target && !tipEl.hidden) {
+        positionTip(target)
+        return
+      }
+      scheduleTip(target)
+    },
+    true
+  )
+
+  document.addEventListener(
+    'pointerout',
+    (e) => {
+      const from = findTipTarget(e.target)
+      if (!from) return
+      const to = findTipTarget(e.relatedTarget)
+      if (to === from) return
+      if (tipShowTimer) {
+        clearTimeout(tipShowTimer)
+        tipShowTimer = null
+      }
+      if (tipAnchor === from) hideTip(false)
+    },
+    true
+  )
+
+  document.addEventListener(
+    'focusin',
+    (e) => {
+      const target = findTipTarget(e.target)
+      if (target) showTipFor(target)
+    },
+    true
+  )
+
+  document.addEventListener(
+    'focusout',
+    (e) => {
+      const from = findTipTarget(e.target)
+      if (!from) return
+      const to = findTipTarget(e.relatedTarget)
+      if (to === from) return
+      if (tipAnchor === from) hideTip(false)
+    },
+    true
+  )
+
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (tipAnchor && !tipEl.hidden) positionTip(tipAnchor)
+      else hideTip(true)
+    },
+    true
+  )
+
+  window.addEventListener('resize', () => hideTip(true))
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') hideTip(true)
+  })
 
   function toggleTheme() {
     const cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'
@@ -176,10 +333,35 @@
     set('stat-fail', fail)
   }
 
+  function closeTaskEvents() {
+    if (taskEvents) {
+      try {
+        taskEvents.close()
+      } catch {
+        /* ignore */
+      }
+      taskEvents = null
+    }
+    sseConnected = false
+  }
+
+  function scheduleTaskPoll() {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+    if (!authenticated) return
+    const ms = sseConnected ? POLL_SSE_MS : POLL_FALLBACK_MS
+    pollTimer = setInterval(() => {
+      void loadTasks()
+    }, ms)
+  }
+
   function showLogin() {
     authenticated = false
     viewLogin.hidden = false
     viewMain.hidden = true
+    closeTaskEvents()
     if (pollTimer) {
       clearInterval(pollTimer)
       pollTimer = null
@@ -197,7 +379,9 @@
       avatar.textContent = ch || '管'
     }
     if (whoami) {
-      whoami.title = username ? `已登录：${username}` : '已登录'
+      const tip = username ? `已登录：${username}` : '已登录'
+      whoami.setAttribute('data-tip', tip)
+      whoami.removeAttribute('title')
       if (!nameEl && !avatar) whoami.textContent = name
     }
   }
@@ -230,18 +414,20 @@
     setWhoami(username)
     syncModeUi()
     void loadTasks()
-    if (pollTimer) clearInterval(pollTimer)
-    pollTimer = setInterval(() => {
-      void loadTasks()
-    }, 2000)
+    openTaskEvents()
+    scheduleTaskPoll()
   }
 
   function setFileLabel(file) {
     if (file) {
       fileName.textContent = file.name
+      fileName.setAttribute('data-tip', file.name)
+      fileName.removeAttribute('title')
       dropzone.classList.add('has-file')
     } else {
       fileName.textContent = FILE_PLACEHOLDER
+      fileName.removeAttribute('data-tip')
+      fileName.removeAttribute('title')
       dropzone.classList.remove('has-file')
     }
   }
@@ -411,6 +597,14 @@
     showLogin()
   })
 
+  window.addEventListener('pagehide', () => {
+    closeTaskEvents()
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  })
+
   optMode.addEventListener('change', () => {
     if (optMode.value === 'image') applyImagePresetDefaults()
     else syncModeUi()
@@ -500,8 +694,135 @@
     return null
   }
 
+  function findTaskRow(taskId) {
+    if (!taskBody || !taskId) return null
+    const id = String(taskId)
+    const rows = taskBody.querySelectorAll('tr[data-task-id]')
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].getAttribute('data-task-id') === id) return rows[i]
+    }
+    return null
+  }
+
+  function patchTaskProgress(payload) {
+    if (!payload || !payload.id) return
+    const id = payload.id
+    const row = findTaskRow(id)
+    const progress =
+      typeof payload.progress === 'number' && Number.isFinite(payload.progress)
+        ? Math.max(0, Math.min(100, payload.progress))
+        : 0
+    const status = payload.status || 'running'
+
+    const idx = lastTasks.findIndex((t) => t.id === id)
+    if (idx >= 0) {
+      lastTasks[idx] = {
+        ...lastTasks[idx],
+        status,
+        progress,
+        time: payload.time != null ? payload.time : lastTasks[idx].time,
+        speed: payload.speed != null ? payload.speed : lastTasks[idx].speed,
+        etaSec: payload.etaSec != null ? payload.etaSec : lastTasks[idx].etaSec
+      }
+      updateStats(lastTasks)
+    }
+
+    if (!row) {
+      void loadTasks()
+      return
+    }
+
+    const statusEl = row.querySelector('.status')
+    if (statusEl) {
+      statusEl.className = 'status ' + status
+      statusEl.textContent = statusLabel(status)
+    }
+    const pctText = row.querySelector('.pct-text')
+    const pctFill = row.querySelector('.pct-fill')
+    if (pctText) pctText.textContent = progress.toFixed(1) + '%'
+    if (pctFill) {
+      pctFill.style.width = progress + '%'
+      pctFill.classList.toggle('is-done', status === 'completed')
+      pctFill.classList.toggle('is-fail', status === 'failed')
+    }
+  }
+
+  function upsertTaskFromView(view) {
+    if (!view || !view.id) return
+    const idx = lastTasks.findIndex((t) => t.id === view.id)
+    if (idx >= 0) lastTasks[idx] = {...lastTasks[idx], ...view}
+    else lastTasks = [view, ...lastTasks]
+    // 结构性变化（下载/播放/缩略图）用整表重绘更稳妥
+    renderTasks(lastTasks)
+  }
+
+  function openTaskEvents() {
+    closeTaskEvents()
+    if (!authenticated || typeof EventSource === 'undefined') {
+      scheduleTaskPoll()
+      return
+    }
+    try {
+      taskEvents = new EventSource('/api/tasks/events')
+    } catch {
+      sseConnected = false
+      scheduleTaskPoll()
+      return
+    }
+
+    taskEvents.addEventListener('snapshot', (ev) => {
+      try {
+        const data = JSON.parse(ev.data || '{}')
+        if (data && Array.isArray(data.tasks)) {
+          renderTasks(data.tasks)
+        }
+      } catch {
+        /* ignore */
+      }
+    })
+
+    taskEvents.addEventListener('progress', (ev) => {
+      try {
+        const data = JSON.parse(ev.data || '{}')
+        patchTaskProgress(data)
+      } catch {
+        /* ignore */
+      }
+    })
+
+    taskEvents.addEventListener('end', (ev) => {
+      try {
+        const data = JSON.parse(ev.data || '{}')
+        upsertTaskFromView(data)
+      } catch {
+        void loadTasks()
+      }
+    })
+
+    taskEvents.addEventListener('queued', (ev) => {
+      try {
+        const data = JSON.parse(ev.data || '{}')
+        upsertTaskFromView(data)
+      } catch {
+        void loadTasks()
+      }
+    })
+
+    taskEvents.onopen = () => {
+      sseConnected = true
+      setTasksPollWarn(false)
+      scheduleTaskPoll()
+    }
+
+    taskEvents.onerror = () => {
+      sseConnected = false
+      scheduleTaskPoll()
+    }
+  }
+
   function renderTasks(tasks) {
-    updateStats(tasks)
+    lastTasks = Array.isArray(tasks) ? tasks.slice() : []
+    updateStats(lastTasks)
     if (!tasks || tasks.length === 0) {
       taskBody.innerHTML = `<tr class="empty-row">
         <td colspan="5">
@@ -534,18 +855,37 @@
         const modeTag = modeLabel(t.mode)
           ? `<span class="mode-tag ${modeClass(t.mode)}">${escapeHtml(modeLabel(t.mode))}</span>`
           : ''
-        const thumb =
-          t.hasThumbnail && t.mode !== 'audio'
-            ? `<button type="button" class="task-thumb-btn" data-preview-id="${escapeHtml(t.id)}" data-preview-name="${escapeHtml(t.fileName || t.id)}" title="点击查看大图">
-                <img class="task-thumb" src="/api/tasks/${encodeURIComponent(t.id)}/thumbnail" alt="" loading="lazy" onerror="this.closest('.task-thumb-btn').classList.add('is-fail')" />
-              </button>`
-            : `<span class="task-thumb task-thumb-ph ${t.mode === 'audio' ? 'is-audio' : ''}" aria-hidden="true"></span>`
-        return `<tr>
+        const fullName = t.fileName || t.id
+        const mode = t.mode || 'compress'
+        const canPlay = Boolean(t.playable)
+        const mimeAttr = t.mediaMime
+          ? ` data-preview-mime="${escapeHtml(t.mediaMime)}"`
+          : ''
+        const dlAttr = t.downloadable ? ' data-preview-downloadable="1"' : ''
+        const audioNoteSvg =
+          '<svg class="task-thumb-ph__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 18V6.4c0-.4.2-.7.6-.9l8-3c.7-.3 1.4.2 1.4 1V15" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="18" r="2.5" stroke="currentColor" stroke-width="1.7"/><circle cx="17" cy="15" r="2.5" stroke="currentColor" stroke-width="1.7"/></svg>'
+        let thumb = ''
+        if (mode === 'audio') {
+          if (canPlay) {
+            const tip = t.downloadable ? '点击播放音频' : '源文件可预听'
+            thumb = `<button type="button" class="task-thumb-btn is-audio" data-preview-id="${escapeHtml(t.id)}" data-preview-name="${escapeHtml(fullName)}" data-preview-kind="audio"${mimeAttr}${dlAttr} data-tip="${tip}" aria-label="${tip}"><span class="task-thumb task-thumb-ph is-audio">${audioNoteSvg}</span></button>`
+          } else {
+            thumb = `<span class="task-thumb task-thumb-ph is-audio" data-tip="完成后可播放" aria-hidden="true">${audioNoteSvg}</span>`
+          }
+        } else if (t.hasThumbnail) {
+          // 视频未完成仅看抽帧图；完成后才播输出
+          const kind = mode === 'image' ? 'image' : canPlay ? 'video' : 'image'
+          const tip = kind === 'video' ? '点击播放视频' : '点击查看大图'
+          thumb = `<button type="button" class="task-thumb-btn${kind === 'video' ? ' is-playable' : ''}" data-preview-id="${escapeHtml(t.id)}" data-preview-name="${escapeHtml(fullName)}" data-preview-kind="${kind}"${mimeAttr}${dlAttr} data-tip="${tip}" aria-label="${tip}"><img class="task-thumb" src="/api/tasks/${encodeURIComponent(t.id)}/thumbnail" alt="" loading="lazy" onerror="this.closest('.task-thumb-btn').classList.add('is-fail')" /></button>`
+        } else {
+          thumb = `<span class="task-thumb task-thumb-ph" aria-hidden="true"></span>`
+        }
+        return `<tr data-task-id="${escapeHtml(t.id)}">
           <td>
             <div class="task-file-row">
               ${thumb}
               <div class="task-file">
-                <div class="task-file-name" title="${escapeHtml(t.fileName || t.id)}">${escapeHtml(t.fileName || t.id)}</div>
+                <div class="task-file-name" data-tip="${escapeHtml(fullName)}">${escapeHtml(fullName)}</div>
                 ${modeTag}
                 ${err}
               </div>
@@ -706,6 +1046,12 @@
 
   const lightbox = $('thumb-lightbox')
   const lightboxImg = $('thumb-lightbox-img')
+  const lightboxVideo = $('thumb-lightbox-video')
+  const lightboxAudio = $('thumb-lightbox-audio')
+  const lightboxAudioWrap = $('thumb-lightbox-audio-wrap')
+  const lightboxFallback = $('thumb-lightbox-fallback')
+  const lightboxFallbackMsg = $('thumb-lightbox-fallback-msg')
+  const lightboxFallbackDl = $('thumb-lightbox-fallback-dl')
   const lightboxTitle = $('thumb-lightbox-title')
   const lightboxLoading = $('thumb-lightbox-loading')
   const lightboxCloseBtn = $('thumb-lightbox-x')
@@ -718,27 +1064,145 @@
   function getLightboxFocusables() {
     if (!lightboxPanel) return []
     const nodes = lightboxPanel.querySelectorAll(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), video[controls], audio[controls], [tabindex]:not([tabindex="-1"])'
     )
     return Array.prototype.filter.call(nodes, (el) => {
       if (el.hidden || el.getAttribute('aria-hidden') === 'true') return false
+      if (el.closest('[hidden]')) return false
       const style = window.getComputedStyle(el)
       return style.display !== 'none' && style.visibility !== 'hidden'
     })
+  }
+
+  function stopMediaEl(el) {
+    if (!el) return
+    try {
+      el.pause()
+    } catch {
+      /* ignore */
+    }
+    el.removeAttribute('src')
+    try {
+      el.load()
+    } catch {
+      /* ignore */
+    }
+    el.hidden = true
+    el.onloadeddata = null
+    el.oncanplay = null
+    el.onerror = null
+  }
+
+  function hideLightboxFallback() {
+    if (lightboxFallback) lightboxFallback.hidden = true
+    if (lightboxFallbackDl) {
+      lightboxFallbackDl.hidden = true
+      lightboxFallbackDl.removeAttribute('href')
+    }
+  }
+
+  function showUnsupportedFallback(opts) {
+    const taskId = opts && opts.taskId
+    const downloadable = Boolean(opts && opts.downloadable)
+    const asVideoStill = Boolean(opts && opts.asVideoStill)
+    const body = lightbox ? lightbox.querySelector('.thumb-lightbox-body') : null
+    if (lightboxLoading) {
+      lightboxLoading.hidden = true
+      lightboxLoading.classList.remove('is-error')
+    }
+    stopMediaEl(lightboxVideo)
+    stopMediaEl(lightboxAudio)
+    if (lightboxAudioWrap) lightboxAudioWrap.hidden = true
+
+    if (asVideoStill && taskId) {
+      openImageLightbox(taskId)
+      if (body) body.classList.add('has-media-fallback')
+    } else {
+      if (lightboxImg) {
+        lightboxImg.hidden = true
+        lightboxImg.removeAttribute('src')
+      }
+      if (body) body.classList.remove('has-media-fallback')
+    }
+
+    if (lightboxFallback) lightboxFallback.hidden = false
+    if (lightboxFallbackMsg) {
+      lightboxFallbackMsg.textContent = asVideoStill
+        ? '当前浏览器无法播放此视频，已显示预览图；请下载后播放'
+        : '当前浏览器无法预览此格式，请下载后播放'
+    }
+    if (lightboxFallbackDl && taskId && downloadable) {
+      lightboxFallbackDl.href =
+        '/api/tasks/' + encodeURIComponent(taskId) + '/download'
+      lightboxFallbackDl.hidden = false
+    } else if (lightboxFallbackDl) {
+      lightboxFallbackDl.hidden = true
+      lightboxFallbackDl.removeAttribute('href')
+    }
+  }
+
+  function mimeProbablyPlayable(kind, mime) {
+    if (!mime) return true
+    try {
+      // 抽音频未完成时源常为视频容器，浏览器多能取音轨；预检勿用 video/* 卡死
+      if (kind === 'audio' && mime.indexOf('video/') === 0) return true
+      const el =
+        kind === 'audio'
+          ? document.createElement('audio')
+          : document.createElement('video')
+      if (!el || typeof el.canPlayType !== 'function') return true
+      const r = el.canPlayType(mime)
+      return r === 'probably' || r === 'maybe'
+    } catch {
+      return true
+    }
+  }
+
+  function guessMimeFromName(name) {
+    const n = String(name || '').toLowerCase()
+    const i = n.lastIndexOf('.')
+    const ext = i >= 0 ? n.slice(i) : ''
+    const map = {
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.mkv': 'video/x-matroska',
+      '.mov': 'video/quicktime',
+      '.m4v': 'video/mp4',
+      '.mp3': 'audio/mpeg',
+      '.m4a': 'audio/mp4',
+      '.aac': 'audio/aac',
+      '.opus': 'audio/opus',
+      '.ogg': 'audio/ogg',
+      '.wav': 'audio/wav',
+      '.flac': 'audio/flac'
+    }
+    return map[ext] || ''
+  }
+
+  function resetLightboxMedia() {
+    if (lightboxImg) {
+      lightboxImg.hidden = true
+      lightboxImg.removeAttribute('src')
+      lightboxImg.onload = null
+      lightboxImg.onerror = null
+    }
+    stopMediaEl(lightboxVideo)
+    stopMediaEl(lightboxAudio)
+    if (lightboxAudioWrap) lightboxAudioWrap.hidden = true
+    hideLightboxFallback()
+    const body = lightbox ? lightbox.querySelector('.thumb-lightbox-body') : null
+    if (body) body.classList.remove('has-media-fallback')
+    if (lightboxLoading) {
+      lightboxLoading.hidden = true
+      lightboxLoading.classList.remove('is-error')
+    }
   }
 
   function closeLightbox() {
     if (!lightbox || lightbox.hidden) return
     lightbox.hidden = true
     document.body.classList.remove('lightbox-open')
-    if (lightboxImg) {
-      lightboxImg.hidden = true
-      lightboxImg.removeAttribute('src')
-    }
-    if (lightboxLoading) {
-      lightboxLoading.hidden = true
-      lightboxLoading.classList.remove('is-error')
-    }
+    resetLightboxMedia()
     const restore = lightboxReturnFocus
     lightboxReturnFocus = null
     if (restore && typeof restore.focus === 'function') {
@@ -750,26 +1214,7 @@
     }
   }
 
-  function openLightbox(taskId, fileName, triggerEl) {
-    if (!lightbox || !taskId) return
-    lightboxReturnFocus =
-      triggerEl && typeof triggerEl.focus === 'function'
-        ? triggerEl
-        : document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null
-    lightbox.hidden = false
-    document.body.classList.add('lightbox-open')
-    if (lightboxTitle) lightboxTitle.textContent = fileName || '预览'
-    if (lightboxImg) {
-      lightboxImg.hidden = true
-      lightboxImg.removeAttribute('src')
-    }
-    if (lightboxLoading) {
-      lightboxLoading.hidden = false
-      lightboxLoading.classList.remove('is-error')
-    }
-
+  function focusLightboxChrome() {
     const focusTarget = lightboxCloseBtn || getLightboxFocusables()[0]
     if (focusTarget && typeof focusTarget.focus === 'function') {
       try {
@@ -778,7 +1223,13 @@
         /* ignore */
       }
     }
+  }
 
+  function openImageLightbox(taskId) {
+    if (lightboxLoading) {
+      lightboxLoading.hidden = false
+      lightboxLoading.classList.remove('is-error')
+    }
     const thumbSrc = '/api/tasks/' + encodeURIComponent(taskId) + '/thumbnail'
     const previewSrc =
       '/api/tasks/' + encodeURIComponent(taskId) + '/thumbnail?edge=1280'
@@ -804,7 +1255,6 @@
       return
     }
 
-    // 先显示小图，再换大图
     show(thumbSrc)
     const hi = new Image()
     hi.onload = () => {
@@ -812,9 +1262,89 @@
       if (!lightbox.hidden) show(previewSrc)
     }
     hi.onerror = () => {
-      // 保留小图
+      /* 保留小图 */
     }
     hi.src = previewSrc
+  }
+
+  function openStreamLightbox(kind, taskId, opts) {
+    const mime = (opts && opts.mime) || ''
+    const downloadable = Boolean(opts && opts.downloadable)
+    const fileName = (opts && opts.fileName) || ''
+    const resolvedMime = mime || guessMimeFromName(fileName)
+
+    if (resolvedMime && !mimeProbablyPlayable(kind, resolvedMime)) {
+      showUnsupportedFallback({
+        taskId,
+        downloadable,
+        asVideoStill: kind === 'video'
+      })
+      return
+    }
+
+    const mediaSrc = '/api/tasks/' + encodeURIComponent(taskId) + '/media'
+    if (lightboxLoading) {
+      lightboxLoading.hidden = false
+      lightboxLoading.classList.remove('is-error')
+    }
+
+    const onReady = () => {
+      if (lightboxLoading) lightboxLoading.hidden = true
+    }
+    const onError = () => {
+      showUnsupportedFallback({
+        taskId,
+        downloadable,
+        asVideoStill: kind === 'video'
+      })
+    }
+
+    if (kind === 'video' && lightboxVideo) {
+      lightboxVideo.onloadeddata = onReady
+      lightboxVideo.onerror = onError
+      lightboxVideo.hidden = false
+      lightboxVideo.src = mediaSrc
+      lightboxVideo.load()
+      const playP = lightboxVideo.play()
+      if (playP && typeof playP.catch === 'function') playP.catch(() => {})
+      return
+    }
+
+    if (kind === 'audio' && lightboxAudio) {
+      if (lightboxAudioWrap) lightboxAudioWrap.hidden = false
+      lightboxAudio.onloadeddata = onReady
+      lightboxAudio.oncanplay = onReady
+      lightboxAudio.onerror = onError
+      lightboxAudio.hidden = false
+      lightboxAudio.src = mediaSrc
+      lightboxAudio.load()
+      const playP = lightboxAudio.play()
+      if (playP && typeof playP.catch === 'function') playP.catch(() => {})
+    }
+  }
+
+  function openLightbox(taskId, fileName, triggerEl, kind, extra) {
+    if (!lightbox || !taskId) return
+    lightboxReturnFocus =
+      triggerEl && typeof triggerEl.focus === 'function'
+        ? triggerEl
+        : document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null
+    resetLightboxMedia()
+    lightbox.hidden = false
+    document.body.classList.add('lightbox-open')
+    if (lightboxTitle) lightboxTitle.textContent = fileName || '预览'
+    focusLightboxChrome()
+
+    const previewKind = kind === 'video' || kind === 'audio' ? kind : 'image'
+    if (previewKind === 'image') openImageLightbox(taskId)
+    else
+      openStreamLightbox(previewKind, taskId, {
+        mime: extra && extra.mime,
+        downloadable: extra && extra.downloadable,
+        fileName
+      })
   }
 
   if (taskBody) {
@@ -827,7 +1357,12 @@
       openLightbox(
         btn.getAttribute('data-preview-id'),
         btn.getAttribute('data-preview-name'),
-        btn
+        btn,
+        btn.getAttribute('data-preview-kind') || 'image',
+        {
+          mime: btn.getAttribute('data-preview-mime') || '',
+          downloadable: btn.getAttribute('data-preview-downloadable') === '1'
+        }
       )
     })
   }

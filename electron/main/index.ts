@@ -116,7 +116,7 @@ function hideToTray(): void {
 function quitApp(): void {
   allowQuit = true
   closeAskPending = false
-  taskQueue.cancelAll()
+  taskQueue.cancelAll(true)
   stopLanServer()
   if (tray) {
     tray.destroy()
@@ -772,7 +772,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   // 托盘常驻时窗口可能被 hide 而非销毁；仅在真正退出时清理
   if (allowQuit && process.platform !== 'darwin') {
-    taskQueue.cancelAll()
+    taskQueue.cancelAll(true)
     app.quit()
   }
 })
