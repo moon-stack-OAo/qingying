@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### 计划
+
+- Windows 代码签名、macOS 公证完整链路（配置与证书就绪后启用）
+
+## [1.2.3]
+
 ### 安全
 
 - **`openExternal` 协议白名单落地**：`setWindowOpenHandler` 仅对 `http:` / `https:` 调用 `shell.openExternal`（与 1.2.0 说明对齐）
@@ -35,15 +41,13 @@
 - `AGENTS.md`：注明 `ffmpegLogic` 使用 Node `path`、勿打进纯浏览器包；改 native 包时核对 `asarUnpack`
 - `README`：打包二进制说明补充 `sharp` / `@img` 与同步改 `electron-builder.yml` 的提醒
 - `docs/lan-web/DESIGN.md`：局域网远程 Web 设计规范
+- Release 正文由 changelog 提取，并自动附带下载与安装说明
 
 ### 测试
 
 - 补充 `pathUtils` 用例
 - 补充局域网配对码 `pairCode` 用例
-
-### 计划
-
-- Windows 代码签名、macOS 公证完整链路（配置与证书就绪后启用）
+- 补充局域网 SSE 节流与 `taskQueueLogic` LAN 分流用例
 
 ## [1.2.2]
 
@@ -284,7 +288,9 @@
 | `Ctrl/Cmd + D`                                | 切换浅色 / 深色 |
 | `F1` 或 `Ctrl + /`                             | 快捷键帮助     |
 
-[Unreleased]: https://github.com/moon-stack-OAo/qingying/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/moon-stack-OAo/qingying/compare/v1.2.3...HEAD
+
+[1.2.3]: https://github.com/moon-stack-OAo/qingying/releases/tag/v1.2.3
 
 [1.2.2]: https://github.com/moon-stack-OAo/qingying/releases/tag/v1.2.2
 
