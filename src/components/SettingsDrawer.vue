@@ -916,6 +916,12 @@ function onPathKeydown(e: KeyboardEvent): void {
   height: 100%;
 }
 
+.settings-scroll :deep(.el-scrollbar__view) {
+  /* 给浮动滚动条留出槽位，避免盖住控件与文案 */
+  padding-right: 16px;
+  box-sizing: border-box;
+}
+
 .setting-pane {
   display: flex;
   flex-direction: column;
