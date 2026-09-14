@@ -52,6 +52,15 @@ export {
   type RunMosaicFrameByFrameParams
 } from './mosaicFrameRunner'
 
+export {
+  runVideoToGif,
+  runImagesToGif,
+  runGifOptimize,
+  type RunVideoToGifParams,
+  type RunImagesToGifParams,
+  type RunGifOptimizeParams
+} from './gifRunner'
+
 // 纯逻辑 re-export，保持原 ffmpeg.ts 对外 API 兼容
 export {
   mapCrfToHardwareQuality,

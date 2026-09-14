@@ -36,17 +36,20 @@ export function registerDialogIpc(): void {
       const mediaExts = Array.from(new Set(videoExts.concat(imageExts)))
 
       const mode = typeof opts?.mode === 'string' ? opts.mode : ''
-      let kind: 'video' | 'image' | 'all' =
+      let kind: 'video' | 'image' | 'all' | 'gif' =
         opts?.mediaKind === 'video' ||
         opts?.mediaKind === 'image' ||
         opts?.mediaKind === 'all'
           ? opts.mediaKind
           : 'all'
       if (mode) {
-        if (
+        if (mode === 'gif-optimize') {
+          kind = 'gif'
+        } else if (
           mode === 'image' ||
           mode === 'image-crop' ||
-          mode === 'image-stitch'
+          mode === 'image-stitch' ||
+          mode === 'images-to-gif'
         ) {
           kind = 'image'
         } else if (
@@ -54,42 +57,51 @@ export function registerDialogIpc(): void {
           mode === 'audio' ||
           mode === 'video-concat' ||
           mode === 'media-compose' ||
-          mode === 'video-mosaic'
+          mode === 'video-mosaic' ||
+          mode === 'video-to-gif'
         ) {
           kind = 'video'
         }
       }
 
       const title =
-        kind === 'image'
-          ? '选择图片'
-          : kind === 'video'
-            ? mode === 'video-mosaic'
-              ? '选择视频（打码仅支持单个）'
-              : '选择视频'
-            : '选择媒体文件'
+        kind === 'gif'
+          ? '选择动图（GIF / WebP）'
+          : kind === 'image'
+            ? '选择图片'
+            : kind === 'video'
+              ? mode === 'video-mosaic'
+                ? '选择视频（打码仅支持单个）'
+                : '选择视频'
+              : '选择媒体文件'
 
       const filters =
-        kind === 'image'
+        kind === 'gif'
           ? [
+              { name: '动图文件', extensions: ['gif', 'webp'] },
               { name: '图片文件', extensions: imageExts },
               { name: '所有文件', extensions: ['*'] }
             ]
-          : kind === 'video'
+          : kind === 'image'
             ? [
-                { name: '视频文件', extensions: videoExts },
-                { name: '所有文件', extensions: ['*'] }
-              ]
-            : [
-                { name: '媒体文件', extensions: mediaExts },
-                { name: '视频文件', extensions: videoExts },
                 { name: '图片文件', extensions: imageExts },
                 { name: '所有文件', extensions: ['*'] }
               ]
+            : kind === 'video'
+              ? [
+                  { name: '视频文件', extensions: videoExts },
+                  { name: '所有文件', extensions: ['*'] }
+                ]
+              : [
+                  { name: '媒体文件', extensions: mediaExts },
+                  { name: '视频文件', extensions: videoExts },
+                  { name: '图片文件', extensions: imageExts },
+                  { name: '所有文件', extensions: ['*'] }
+                ]
 
-      // 视频打码仅允许单选
+      // 视频打码 / 动图优化仅允许单选
       const properties: Array<'openFile' | 'multiSelections'> =
-        mode === 'video-mosaic'
+        mode === 'video-mosaic' || mode === 'gif-optimize'
           ? ['openFile']
           : ['openFile', 'multiSelections']
 
@@ -104,7 +116,13 @@ export function registerDialogIpc(): void {
       }
 
       const files = result.filePaths
-        .filter(isMediaFile)
+        .filter((p) => {
+          if (mode === 'gif-optimize') {
+            const ext = extname(p).toLowerCase()
+            return ext === '.gif' || ext === '.webp'
+          }
+          return isMediaFile(p)
+        })
         .map((p) => ({ path: p, name: basename(p) }))
 
       allowPaths(files.map((f) => f.path))

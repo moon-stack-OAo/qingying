@@ -8,6 +8,17 @@
 ### 计划
 
 - Windows 代码签名、macOS 公证完整链路（配置与证书就绪后启用）
+- 局域网远程接入动图相关任务模式（当前仅桌面端）
+
+## [1.2.5]
+
+### 新增
+
+- **视频转动图**（`video-to-gif`）：视频片段导出 GIF / 动图 WebP；支持时段裁剪、帧率、最长边、循环、调色板色数与抖动
+- **多图转动图**（`images-to-gif`）：≥2 张静图按序合成动图；可调帧间隔/帧率与输出格式
+- **动图优化**（`gif-optimize`）：对已有 GIF / 动图 WebP 用内置 FFmpeg 重编码缩小体积（palette / libwebp，无外部 gifsicle）
+- **动图公共引擎**：`shared/gifLogic` + `gifRunner`；GIF 两遍调色板，WebP 单遍 `libwebp`
+- **开发二进制自检**：`npm run ensure:binaries`（`scripts/ensure-binaries.mjs`）检查并补装 Electron / ffmpeg / ffprobe / sharp / resvg
 
 ## [1.2.4]
 

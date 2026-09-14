@@ -112,6 +112,43 @@ export function mapFfmpegError(
     return '源文件没有可用的音频流，无法抽取音频。'
   }
 
+  // GIF 调色板 / palette
+  if (
+    /palettegen/i.test(text) ||
+    /paletteuse/i.test(text) ||
+    /error generating palette/i.test(text) ||
+    (/gif/i.test(text) && /palette/i.test(text))
+  ) {
+    return 'GIF 调色板生成或应用失败。可尝试降低分辨率/帧率，或缩短裁剪时长后重试。'
+  }
+
+  // GIF 过大 / 内存
+  if (
+    (/gif/i.test(lower) && /memory|too large|allocation/i.test(lower)) ||
+    /gif.*muxer/i.test(lower)
+  ) {
+    return 'GIF 导出失败（体积或内存过高）。请降低最长边、帧率，或缩短时段后重试。'
+  }
+
+  // 动图优化：输入非动画 / 解码失败
+  if (
+    /does not contain any stream/i.test(text) ||
+    (/webp/i.test(lower) && /no.*frame|not.*animat/i.test(lower))
+  ) {
+    return '动图优化失败：无法解码为动画帧。请确认输入为 GIF 或动图 WebP。'
+  }
+
+  // 动图 WebP / libwebp
+  if (
+    /libwebp/i.test(text) ||
+    /webp.*anim/i.test(lower) ||
+    (/webp/i.test(lower) &&
+      /encoder|encode|quality|compression/i.test(lower) &&
+      /error|fail|unable|cannot/i.test(lower))
+  ) {
+    return '动图 WebP 编码失败。可尝试降低质量/分辨率/帧率，或改用 GIF 后重试。'
+  }
+
   // 损坏 / 不支持格式
   if (
     /invalid data found/i.test(text) ||

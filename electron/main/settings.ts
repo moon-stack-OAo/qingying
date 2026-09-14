@@ -88,6 +88,9 @@ function normalizeTaskMode(v: unknown): TaskMode {
     v === 'video-concat' ||
     v === 'media-compose' ||
     v === 'video-mosaic' ||
+    v === 'video-to-gif' ||
+    v === 'images-to-gif' ||
+    v === 'gif-optimize' ||
     v === 'compress'
   ) {
     return v

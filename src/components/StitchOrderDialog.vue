@@ -16,7 +16,7 @@ export interface StitchOrderConfirmPayload {
 const props = withDefaults(
   defineProps<{
     modelValue: boolean
-    mode: 'image-stitch' | 'video-concat'
+    mode: 'image-stitch' | 'video-concat' | 'images-to-gif'
     paths: string[]
     editable?: boolean
     layout?: StitchLayout
@@ -62,11 +62,20 @@ function listWrap(): HTMLElement | null {
 }
 
 const isImageStitch = computed(() => props.mode === 'image-stitch')
-const dialogTitle = '调整拼接顺序'
-const dialogSub = computed(() =>
-  isImageStitch.value ? '图片拼接 · 自上而下即输出顺序' : '视频拼接 · 自上而下即输出顺序'
+const isImagesToGif = computed(() => props.mode === 'images-to-gif')
+const dialogTitle = computed(() =>
+  isImagesToGif.value ? '调整帧顺序' : '调整拼接顺序'
 )
-const unitLabel = computed(() => (isImageStitch.value ? '张' : '段'))
+const dialogSub = computed(() =>
+  isImagesToGif.value
+    ? '多图转动图 · 自上而下即帧顺序'
+    : isImageStitch.value
+      ? '图片拼接 · 自上而下即输出顺序'
+      : '视频拼接 · 自上而下即输出顺序'
+)
+const unitLabel = computed(() =>
+  isImageStitch.value || isImagesToGif.value ? '张' : '段'
+)
 
 function baseName(p: string): string {
   const s = p.replace(/\\/g, '/')

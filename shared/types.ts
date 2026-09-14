@@ -4,7 +4,7 @@ export type PresetId = 'archive' | 'standard' | 'social' | 'custom'
 /** 输出格式（视频容器） */
 export type OutputFormat = 'mp4' | 'webm' | 'mkv' | 'mov'
 
-/** 任务模式：视频压缩 / 仅抽音频 / 图片 / 视频拼接 / 图+视频混剪 / 视频打码 */
+/** 任务模式：视频压缩 / 仅抽音频 / 图片 / 视频拼接 / 图+视频混剪 / 视频打码 / 视频转动图 / 多图转动图 / 动图优化 */
 export type TaskMode =
   | 'compress'
   | 'audio'
@@ -14,6 +14,9 @@ export type TaskMode =
   | 'video-concat'
   | 'media-compose'
   | 'video-mosaic'
+  | 'video-to-gif'
+  | 'images-to-gif'
+  | 'gif-optimize'
 
 /** 音频抽取输出格式 */
 export type AudioFormat = 'm4a' | 'mp3' | 'opus'
@@ -202,7 +205,51 @@ export interface CompressOptions {
   concatPreferCopy?: boolean
   /** 图+视频混剪（mode=media-compose） */
   compose?: MediaComposeOptions
+  /** 视频/多图转动图 / 动图优化（mode=video-to-gif | images-to-gif | gif-optimize）；最长边复用顶层 maxEdge */
+  gif?: GifOptions
 }
+
+/** 视频转动图输出格式 */
+export type GifOutputKind = 'gif' | 'webp'
+
+/** 视频/多图转 GIF / 动图 WebP 选项（fps 为数值，勿复用 FpsMode） */
+export interface GifOptions {
+  /** 输出格式：gif（默认）或动图 webp */
+  outputKind?: GifOutputKind
+  /**
+   * 输出帧率，默认 12（video-to-gif）/ 10（images-to-gif）
+   * 与 frameDelayMs 互斥：若同时提供，以 frameDelayMs 为准并反推 fps
+   */
+  fps?: number
+  /**
+   * 每帧间隔毫秒（多图常用）；合法时覆盖 fps（fps≈1000/frameDelayMs）
+   * 默认不设；images-to-gif 未指定 fps 时按 100ms→10fps
+   */
+  frameDelayMs?: number
+  /**
+   * 循环次数：0=无限循环；-1=不循环（播一次）；>0=额外循环次数
+   * 对应 ffmpeg -loop（WebP 时 -1 映射为播一次）
+   */
+  loop?: number
+  /** 调色板颜色数 2–256，默认 256（仅 GIF） */
+  colors?: number
+  /**
+   * 抖动算法：none / bayer / heckbert / floyd_steinberg / sierra2 / sierra2_4a
+   * 默认 bayer（仅 GIF）
+   */
+  dither?: GifDither
+  /** 动图 WebP 质量 0–100，默认 75（仅 webp） */
+  quality?: number
+}
+
+/** GIF paletteuse 抖动模式 */
+export type GifDither =
+  | 'none'
+  | 'bayer'
+  | 'heckbert'
+  | 'floyd_steinberg'
+  | 'sierra2'
+  | 'sierra2_4a'
 
 /** 单个视频局部打码规则 */
 export interface MosaicRegion {
@@ -1063,7 +1110,10 @@ export const TASK_MODE_OPTIONS: Array<{ value: TaskMode; label: string }> = [
   { value: 'image-stitch', label: '图片拼接' },
   { value: 'video-concat', label: '视频拼接' },
   { value: 'media-compose', label: '图+视频' },
-  { value: 'video-mosaic', label: '视频打码' }
+  { value: 'video-mosaic', label: '视频打码' },
+  { value: 'video-to-gif', label: '视频转动图' },
+  { value: 'images-to-gif', label: '多图转动图' },
+  { value: 'gif-optimize', label: '动图优化' }
 ]
 
 /** 工具分组（首页模式信息架构） */
@@ -1077,13 +1127,25 @@ export const TOOL_GROUP_OPTIONS: Array<{ value: ToolGroup; label: string }> = [
 
 /** 各工具组下的二级任务模式 */
 export const TOOL_GROUP_MODES: Record<ToolGroup, TaskMode[]> = {
-  video: ['compress', 'audio', 'video-concat', 'video-mosaic'],
-  image: ['image', 'image-crop', 'image-stitch'],
+  video: ['compress', 'audio', 'video-concat', 'video-mosaic', 'video-to-gif'],
+  image: [
+    'image',
+    'image-crop',
+    'image-stitch',
+    'images-to-gif',
+    'gif-optimize'
+  ],
   compose: ['media-compose']
 }
 
 export function toolGroupOfMode(mode: TaskMode): ToolGroup {
-  if (mode === 'image' || mode === 'image-crop' || mode === 'image-stitch') {
+  if (
+    mode === 'image' ||
+    mode === 'image-crop' ||
+    mode === 'image-stitch' ||
+    mode === 'images-to-gif' ||
+    mode === 'gif-optimize'
+  ) {
     return 'image'
   }
   if (mode === 'media-compose') return 'compose'
@@ -1145,6 +1207,67 @@ export const DEFAULT_CONCAT_NAME_TEMPLATE = '{name}_concat'
 
 /** 默认图+视频混剪输出命名模板 */
 export const DEFAULT_COMPOSE_NAME_TEMPLATE = '{name}_compose'
+
+/** 默认视频转 GIF 输出命名模板 */
+export const DEFAULT_GIF_NAME_TEMPLATE = '{name}_gif'
+
+/** 默认动图 WebP 输出命名模板 */
+export const DEFAULT_WEBP_NAME_TEMPLATE = '{name}_webp'
+
+/** 默认动图优化输出命名模板（扩展名随 outputKind） */
+export const DEFAULT_GIF_OPTIMIZE_NAME_TEMPLATE = '{name}_opt'
+
+/** GIF 帧率预设（UI） */
+export const GIF_FPS_PRESETS = [10, 12, 15, 24] as const
+
+/** GIF 默认帧率（video-to-gif） */
+export const DEFAULT_GIF_FPS = 12
+
+/** 多图转动图默认帧率（≈ frameDelayMs 100） */
+export const DEFAULT_IMAGES_TO_GIF_FPS = 10
+
+/** 动图优化默认帧率（轻量预设） */
+export const DEFAULT_GIF_OPTIMIZE_FPS = 10
+
+/** 动图优化允许的输入扩展名 */
+export const GIF_OPTIMIZE_EXTENSIONS = ['.gif', '.webp'] as const
+
+/** 多图转动图默认帧间隔（ms）；与 fps 互斥时优先本值 */
+export const DEFAULT_IMAGES_TO_GIF_FRAME_DELAY_MS = 100
+
+/** GIF 默认最长边 */
+export const DEFAULT_GIF_MAX_EDGE = 480
+
+/** GIF 默认循环（0=无限） */
+export const DEFAULT_GIF_LOOP = 0
+
+/** GIF 默认调色板颜色数 */
+export const DEFAULT_GIF_COLORS = 256
+
+/** 动图 WebP 默认质量（libwebp -quality） */
+export const DEFAULT_GIF_WEBP_QUALITY = 75
+
+/** 动图输出格式选项（UI） */
+export const GIF_OUTPUT_KIND_OPTIONS: ReadonlyArray<{
+  value: GifOutputKind
+  label: string
+}> = [
+  { value: 'gif', label: 'GIF' },
+  { value: 'webp', label: '动图 WebP' }
+]
+
+/** GIF 抖动选项（UI） */
+export const GIF_DITHER_OPTIONS: ReadonlyArray<{
+  value: GifDither
+  label: string
+}> = [
+  { value: 'bayer', label: 'Bayer（推荐）' },
+  { value: 'floyd_steinberg', label: 'Floyd–Steinberg' },
+  { value: 'sierra2', label: 'Sierra2' },
+  { value: 'sierra2_4a', label: 'Sierra2_4A' },
+  { value: 'heckbert', label: 'Heckbert' },
+  { value: 'none', label: '无抖动' }
+]
 
 /** 图片输出格式选项（UI） */
 export const IMAGE_FORMAT_OPTIONS: ReadonlyArray<{

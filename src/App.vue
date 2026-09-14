@@ -91,6 +91,9 @@ const {
   isVideoConcatMode,
   isMediaComposeMode,
   isVideoMosaicMode,
+  isVideoToGifMode,
+  isImagesToGifMode,
+  isGifEncodeMode,
   isVideoCompressMode,
   imageFormat,
   imageQuality,
@@ -106,6 +109,13 @@ const {
   cropH,
   concatPreferCopy,
   mosaicFrameByFrame,
+  gifOutputKind,
+  gifFps,
+  gifMaxEdge,
+  gifLoop,
+  gifColors,
+  gifDither,
+  gifWebpQuality,
   composeIntroPath,
   composeIntroDuration,
   composeOutroPath,
@@ -144,6 +154,13 @@ const {
   onCropHChange,
   onConcatPreferCopyChange,
   onMosaicFrameByFrameChange,
+  onGifOutputKindChange,
+  onGifFpsChange,
+  onGifMaxEdgeChange,
+  onGifLoopChange,
+  onGifColorsChange,
+  onGifDitherChange,
+  onGifWebpQualityChange,
   onComposeIntroPathChange,
   onComposeIntroDurationChange,
   onComposeOutroPathChange,
@@ -386,9 +403,13 @@ const stitchOrderTask = computed(() => {
   if (!id) return null
   return tasks.value.find((t) => t.id === id) || null
 })
-const stitchOrderMode = computed<'image-stitch' | 'video-concat'>(() => {
+const stitchOrderMode = computed<
+  'image-stitch' | 'video-concat' | 'images-to-gif'
+>(() => {
   const m = stitchOrderTask.value?.options?.mode
-  return m === 'image-stitch' ? 'image-stitch' : 'video-concat'
+  if (m === 'image-stitch') return 'image-stitch'
+  if (m === 'images-to-gif') return 'images-to-gif'
+  return 'video-concat'
 })
 const stitchOrderPaths = computed(() => {
   const t = stitchOrderTask.value
@@ -404,7 +425,9 @@ const stitchOrderEditable = computed(() => {
   const t = stitchOrderTask.value
   return !!(
     t &&
-    (t.options?.mode === 'image-stitch' || t.options?.mode === 'video-concat') &&
+    (t.options?.mode === 'image-stitch' ||
+      t.options?.mode === 'video-concat' ||
+      t.options?.mode === 'images-to-gif') &&
     (t.status === 'pending' || t.status === 'failed')
   )
 })
@@ -627,10 +650,12 @@ function taskModeLabel(mode: TaskMode): string {
 }
 
 function queueMediaKindLabel(mode: TaskMode): string {
+  if (mode === 'gif-optimize') return '动图文件'
   if (
     mode === 'image' ||
     mode === 'image-crop' ||
-    mode === 'image-stitch'
+    mode === 'image-stitch' ||
+    mode === 'images-to-gif'
   ) {
     return '图片文件'
   }
@@ -1291,7 +1316,17 @@ async function onResetSettings(): Promise<void> {
             :is-video-compress-mode="isVideoCompressMode"
             :is-video-concat-mode="isVideoConcatMode"
             :is-video-mosaic-mode="isVideoMosaicMode"
+            :is-video-to-gif-mode="isVideoToGifMode"
+            :is-images-to-gif-mode="isImagesToGifMode"
+            :is-gif-encode-mode="isGifEncodeMode"
             :is-webm="isWebm"
+            :gif-colors="gifColors"
+            :gif-dither="gifDither"
+            :gif-fps="gifFps"
+            :gif-loop="gifLoop"
+            :gif-max-edge="gifMaxEdge"
+            :gif-output-kind="gifOutputKind"
+            :gif-webp-quality="gifWebpQuality"
             :mosaic-frame-by-frame="mosaicFrameByFrame"
             :mute-audio="muteAudio"
             :name-template="nameTemplate"
@@ -1364,6 +1399,13 @@ async function onResetSettings(): Promise<void> {
             @crop-h-change="onCropHChangeUi"
             @concat-prefer-copy-change="onConcatPreferCopyChange"
             @mosaic-frame-by-frame-change="onMosaicFrameByFrameChange"
+            @gif-output-kind-change="onGifOutputKindChange"
+            @gif-fps-change="onGifFpsChange"
+            @gif-max-edge-change="onGifMaxEdgeChange"
+            @gif-loop-change="onGifLoopChange"
+            @gif-colors-change="onGifColorsChange"
+            @gif-dither-change="onGifDitherChange"
+            @gif-webp-quality-change="onGifWebpQualityChange"
             @compose-intro-path-change="onComposeIntroPathChangeUi"
             @compose-intro-duration-change="onComposeIntroDurationChangeUi"
             @compose-outro-path-change="onComposeOutroPathChangeUi"

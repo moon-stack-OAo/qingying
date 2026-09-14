@@ -4,7 +4,7 @@
 
 ## 当前版本
 
-- **1.2.4**：见 `CHANGELOG.md` / `package.json` 的 `version`
+- **1.2.5**：见 `CHANGELOG.md` / `package.json` 的 `version`
 - 未完成项仅保留在 `[Unreleased]` 计划（如代码签名 / 公证）
 - **重要**：当前无真实证书时**不会**实际签名；配置与 CI 接线已就绪，证书到位后按下文清单启用
 

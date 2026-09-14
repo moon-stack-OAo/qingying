@@ -20,6 +20,11 @@ import {
   type EncoderId,
   FPS_OPTIONS,
   type FpsMode,
+  GIF_DITHER_OPTIONS,
+  GIF_FPS_PRESETS,
+  GIF_OUTPUT_KIND_OPTIONS,
+  type GifDither,
+  type GifOutputKind,
   IMAGE_EXTENSIONS,
   IMAGE_FORMAT_OPTIONS,
   IMAGE_LAYOUT_OPTIONS,
@@ -68,6 +73,9 @@ const props = withDefaults(
     isVideoConcatMode: boolean
     isMediaComposeMode: boolean
     isVideoMosaicMode: boolean
+    isVideoToGifMode: boolean
+    isImagesToGifMode: boolean
+    isGifEncodeMode: boolean
     isVideoCompressMode: boolean
     presetDescription: string
     encoderInfo: EncoderDetectResult | null
@@ -110,6 +118,14 @@ const props = withDefaults(
     concatPreferCopy: boolean
     /** 视频打码：逐帧流水线 */
     mosaicFrameByFrame: boolean
+    /** 视频转 GIF / 动图 WebP */
+    gifOutputKind: GifOutputKind
+    gifFps: number
+    gifMaxEdge: number
+    gifLoop: number
+    gifColors: number
+    gifDither: GifDither
+    gifWebpQuality: number
     composeIntroPath: string
     composeIntroDuration: number
     composeOutroPath: string
@@ -146,6 +162,16 @@ const props = withDefaults(
   {
     cropPreviewPath: '',
     mosaicFrameByFrame: false,
+    isVideoToGifMode: false,
+    isImagesToGifMode: false,
+    isGifEncodeMode: false,
+    gifOutputKind: 'gif',
+    gifFps: 12,
+    gifMaxEdge: 480,
+    gifLoop: 0,
+    gifColors: 256,
+    gifDither: 'bayer',
+    gifWebpQuality: 75,
     showCropComposeWarning: false,
     cropComposeWarningText: '',
     hasPending: false,
@@ -197,6 +223,13 @@ const emit = defineEmits<{
   cropHChange: [v: number]
   concatPreferCopyChange: [v: boolean]
   mosaicFrameByFrameChange: [v: boolean]
+  gifOutputKindChange: [v: GifOutputKind]
+  gifFpsChange: [v: number]
+  gifMaxEdgeChange: [v: number]
+  gifLoopChange: [v: number]
+  gifColorsChange: [v: number]
+  gifDitherChange: [v: GifDither]
+  gifWebpQualityChange: [v: number]
   composeIntroPathChange: [v: string]
   composeIntroDurationChange: [v: number]
   composeOutroPathChange: [v: string]
@@ -246,8 +279,10 @@ const isImageCompressMode = computed(() => props.taskMode === 'image')
 const isImageCropMode = computed(() => props.taskMode === 'image-crop')
 const isImageStitchMode = computed(() => props.taskMode === 'image-stitch')
 
-/** 是否展示高级折叠区（打码参数区简化，无高级折叠） */
-const showAdvancedSection = computed(() => !props.isVideoMosaicMode)
+/** 是否展示高级折叠区（打码/GIF 参数区简化，无高级折叠） */
+const showAdvancedSection = computed(
+  () => !props.isVideoMosaicMode && !props.isGifEncodeMode
+)
 
 const advancedSummary = computed(() => {
   if (props.isAudioMode) return '命名 · 并发 · 其它'
@@ -266,7 +301,18 @@ const nameTemplatePlaceholder = computed(() => {
   if (props.isVideoConcatMode) return '{name}_concat'
   if (props.isMediaComposeMode) return '{name}_compose'
   if (props.isVideoMosaicMode) return '{name}_mosaic'
+  if (props.isGifEncodeMode) {
+    if (props.taskMode === 'gif-optimize') return '{name}_opt'
+    return props.gifOutputKind === 'webp' ? '{name}_webp' : '{name}_gif'
+  }
   return '{name}_{preset}'
+})
+
+const gifLoopLabel = computed(() => {
+  const n = props.gifLoop
+  if (n === 0) return '无限循环'
+  if (n === -1) return '不循环'
+  return `额外循环 ${n} 次`
 })
 
 function onImageQualityCommit(v: number | number[]): void {
@@ -441,6 +487,12 @@ function modeDesc(): string {
   if (props.taskMode === 'media-compose') return '片头 / 片尾外露；叠加层与编码器折叠'
   if (props.taskMode === 'video-mosaic')
     return '单任务工作台：选文件后在下方打码台框选区域'
+  if (props.taskMode === 'video-to-gif')
+    return '输出 GIF；建议短片段，可用时段裁剪控制时长'
+  if (props.taskMode === 'images-to-gif')
+    return '多选静图按顺序成帧；顺序在任务表调整；默认约 10fps（100ms）'
+  if (props.taskMode === 'gif-optimize')
+    return '重编码已有 GIF/动图 WebP；默认最长边 480、约 10fps 轻量优化'
   return props.presetDescription || '常用参数置顶；高级编码器与水印折叠'
 }
 
@@ -1106,6 +1158,246 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
             </div>
           </el-tooltip>
           <span class="hint-inline">接近原画导出（CRF 18 · 原分辨率 · MP4 · 软件编码）</span>
+        </div>
+        <div class="opt-row opt-row-output">
+          <div class="opt-item opt-output">
+            <span class="label">输出目录</span>
+            <el-select
+              :model-value="outputDirMode"
+              class="w-2xl"
+              size="small"
+              @change="(v: OutputDirMode) => emit('outputDirModeChange', v)"
+            >
+              <el-option
+                v-for="opt in OUTPUT_DIR_MODE_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+            <template v-if="outputDirMode !== 'sidecar'">
+              <el-button :icon="Folder" size="small" @click="emit('selectOutput')">
+                选择目录
+              </el-button>
+              <el-tooltip :content="outputDir || '未选择输出目录'" :show-after="400" placement="top">
+                <span class="path-text output-path">
+                  {{ outputDir || '未选择输出目录' }}
+                </span>
+              </el-tooltip>
+            </template>
+            <span v-else class="hint-inline">与源文件同目录</span>
+          </div>
+          <div aria-hidden="true" class="opt-divider" />
+          <div class="opt-item opt-item-fill">
+            <span class="label">输出命名</span>
+            <el-select
+              :model-value="nameSelectValue(nameTemplate, nameTemplateCustom)"
+              class="w-4xl"
+              size="small"
+              @change="(v: string) => emit('nameTemplateChange', v)"
+            >
+              <el-option
+                v-for="opt in NAME_TEMPLATE_OPTIONS"
+                :key="opt.id"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+            <el-input
+              v-if="nameTemplateCustom || nameSelectValue(nameTemplate, nameTemplateCustom) === '__custom__'"
+              :model-value="nameTemplate === '__custom__' ? '' : nameTemplate"
+              :placeholder="nameTemplatePlaceholder"
+              class="w-4xl name-template-input"
+              size="small"
+              @update:model-value="(v: string) => emit('customNameTemplateInput', v)"
+            />
+          </div>
+        </div>
+      </template>
+
+      <!-- video-to-gif / images-to-gif / gif-optimize / 动图 WebP -->
+      <template v-else-if="isGifEncodeMode">
+        <div class="opt-row opt-row-wrap">
+          <span class="hint-inline opt-hint-block">
+            <template v-if="taskMode === 'gif-optimize'">
+              <template v-if="gifOutputKind === 'webp'">
+                对已有 GIF / 动图 WebP 重编码为动图 WebP（降分辨率 / 帧率）。不依赖 gifsicle。
+              </template>
+              <template v-else>
+                对已有 GIF / 动图 WebP 重编码为 GIF（调色板 + 可选降色）。默认轻量：最长边 480、约 10fps。
+              </template>
+            </template>
+            <template v-else-if="isImagesToGifMode">
+              <template v-if="gifOutputKind === 'webp'">
+                多张静图按任务顺序合成动图 WebP。至少 2 张；帧率决定每帧停留时间。
+              </template>
+              <template v-else>
+                多张静图按任务顺序合成 GIF。至少 2 张；顺序在任务表可调整。
+              </template>
+            </template>
+            <template v-else-if="gifOutputKind === 'webp'">
+              输出动图 WebP（体积通常更小，部分旧环境兼容性略差）。建议用「时段」截取短片段。
+            </template>
+            <template v-else>
+              输出 GIF（调色板两遍编码）。长视频体积会很大，建议用「时段」截取短片段。
+            </template>
+          </span>
+        </div>
+        <div class="opt-row opt-row-wrap">
+          <div class="opt-item">
+            <span class="label">输出格式</span>
+            <el-select
+              :model-value="gifOutputKind"
+              class="w-2xl"
+              size="small"
+              @change="(v: GifOutputKind) => emit('gifOutputKindChange', v)"
+            >
+              <el-option
+                v-for="opt in GIF_OUTPUT_KIND_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+          </div>
+          <div class="opt-item">
+            <span class="label">帧率</span>
+            <el-select
+              :model-value="gifFps"
+              class="w-md"
+              size="small"
+              @change="(v: number) => emit('gifFpsChange', v)"
+            >
+              <el-option
+                v-for="n in GIF_FPS_PRESETS"
+                :key="n"
+                :label="`${n} fps`"
+                :value="n"
+              />
+            </el-select>
+          </div>
+          <el-tooltip :show-after="400" content="0 = 不限制（文件更大）" placement="top">
+            <div class="opt-item">
+              <span class="label">最长边</span>
+              <el-input-number
+                :max="4096"
+                :min="0"
+                :model-value="gifMaxEdge"
+                :step="80"
+                class="w-lg"
+                controls-position="right"
+                size="small"
+                @change="(v: number | undefined) => emit('gifMaxEdgeChange', typeof v === 'number' ? v : 480)"
+              />
+            </div>
+          </el-tooltip>
+          <el-tooltip
+            :show-after="400"
+            content="0=无限循环；-1=播一次不循环；正数为额外循环次数"
+            placement="top"
+          >
+            <div class="opt-item">
+              <span class="label">循环</span>
+              <el-input-number
+                :max="100"
+                :min="-1"
+                :model-value="gifLoop"
+                :step="1"
+                class="w-lg"
+                controls-position="right"
+                size="small"
+                @change="(v: number | undefined) => emit('gifLoopChange', typeof v === 'number' ? v : 0)"
+              />
+              <span class="hint-inline hint-inline--tight">{{ gifLoopLabel }}</span>
+            </div>
+          </el-tooltip>
+        </div>
+        <div class="opt-row opt-row-wrap">
+          <el-tooltip
+            v-if="isVideoToGifMode"
+            :show-after="400"
+            content="0 = 不裁剪 / 到结尾"
+            placement="top"
+          >
+            <div class="opt-item">
+              <span class="label">时段</span>
+              <span class="hint-inline hint-inline--tight">开始(秒)</span>
+              <el-input-number
+                :max="86400"
+                :min="0"
+                :model-value="trimStart"
+                :precision="1"
+                :step="1"
+                class="w-lg"
+                controls-position="right"
+                size="small"
+                @change="(v: number | undefined) => emit('trimStartChange', typeof v === 'number' ? v : 0)"
+              />
+              <span class="hint-inline hint-inline--tight">结束(秒)</span>
+              <el-input-number
+                :max="86400"
+                :min="0"
+                :model-value="trimEnd"
+                :precision="1"
+                :step="1"
+                class="w-lg"
+                controls-position="right"
+                size="small"
+                @change="(v: number | undefined) => emit('trimEndChange', typeof v === 'number' ? v : 0)"
+              />
+            </div>
+          </el-tooltip>
+          <template v-if="gifOutputKind === 'gif'">
+            <div class="opt-item">
+              <span class="label">颜色数</span>
+              <el-input-number
+                :max="256"
+                :min="2"
+                :model-value="gifColors"
+                :step="16"
+                class="w-lg"
+                controls-position="right"
+                size="small"
+                @change="(v: number | undefined) => emit('gifColorsChange', typeof v === 'number' ? v : 256)"
+              />
+            </div>
+            <div class="opt-item">
+              <span class="label">抖动</span>
+              <el-select
+                :model-value="gifDither"
+                class="w-3xl"
+                size="small"
+                @change="(v: GifDither) => emit('gifDitherChange', v)"
+              >
+                <el-option
+                  v-for="opt in GIF_DITHER_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </div>
+          </template>
+          <el-tooltip
+            v-else
+            :show-after="400"
+            content="libwebp 质量，数值越高体积越大"
+            placement="top"
+          >
+            <div class="opt-item">
+              <span class="label">质量</span>
+              <el-input-number
+                :max="100"
+                :min="0"
+                :model-value="gifWebpQuality"
+                :step="5"
+                class="w-lg"
+                controls-position="right"
+                size="small"
+                @change="(v: number | undefined) => emit('gifWebpQualityChange', typeof v === 'number' ? v : 75)"
+              />
+            </div>
+          </el-tooltip>
         </div>
         <div class="opt-row opt-row-output">
           <div class="opt-item opt-output">

@@ -6,9 +6,19 @@ import {
   DEFAULT_AUDIO_NAME_TEMPLATE,
   DEFAULT_COMPOSE_NAME_TEMPLATE,
   DEFAULT_CONCAT_NAME_TEMPLATE,
+  DEFAULT_GIF_COLORS,
+  DEFAULT_GIF_FPS,
+  DEFAULT_GIF_LOOP,
+  DEFAULT_GIF_MAX_EDGE,
+  DEFAULT_GIF_NAME_TEMPLATE,
+  DEFAULT_GIF_OPTIMIZE_FPS,
+  DEFAULT_GIF_OPTIMIZE_NAME_TEMPLATE,
+  DEFAULT_GIF_WEBP_QUALITY,
+  DEFAULT_IMAGES_TO_GIF_FPS,
   DEFAULT_IMAGE_NAME_TEMPLATE,
   DEFAULT_MOSAIC_NAME_TEMPLATE,
   DEFAULT_NAME_TEMPLATE,
+  DEFAULT_WEBP_NAME_TEMPLATE,
   type AppSettings,
   type AppSettingsPublic,
   type AspectRatioId,
@@ -21,6 +31,8 @@ import {
   type EncodePreset,
   type EncoderId,
   type FpsMode,
+  type GifDither,
+  type GifOutputKind,
   type ImageEngineId,
   type OutputDirMode,
   type OutputFormat,
@@ -34,6 +46,56 @@ import {
   type WatermarkPosition
 } from '@shared/types'
 
+/** 渲染侧 GIF 参数钳制（避免引入依赖 Node 的 gifLogic） */
+function clampGifFps(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_GIF_FPS
+  return Math.max(1, Math.min(50, Math.round(n * 10) / 10))
+}
+
+function clampGifMaxEdge(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_GIF_MAX_EDGE
+  return Math.round(n)
+}
+
+function clampGifLoop(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n)) return DEFAULT_GIF_LOOP
+  const i = Math.round(n)
+  if (i < -1) return DEFAULT_GIF_LOOP
+  return i
+}
+
+function clampGifColors(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n) || n < 2) return DEFAULT_GIF_COLORS
+  return Math.max(2, Math.min(256, Math.round(n)))
+}
+
+function clampGifDither(v: unknown): GifDither {
+  const ok: GifDither[] = [
+    'none',
+    'bayer',
+    'heckbert',
+    'floyd_steinberg',
+    'sierra2',
+    'sierra2_4a'
+  ]
+  if (typeof v === 'string' && (ok as string[]).includes(v)) return v as GifDither
+  return 'bayer'
+}
+
+function clampGifOutputKind(v: unknown): GifOutputKind {
+  return v === 'webp' ? 'webp' : 'gif'
+}
+
+function clampGifWebpQuality(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n)) return DEFAULT_GIF_WEBP_QUALITY
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
+
 const BUILTIN_NAME_TEMPLATES = new Set([
   DEFAULT_NAME_TEMPLATE,
   DEFAULT_AUDIO_NAME_TEMPLATE,
@@ -41,6 +103,9 @@ const BUILTIN_NAME_TEMPLATES = new Set([
   DEFAULT_CONCAT_NAME_TEMPLATE,
   DEFAULT_COMPOSE_NAME_TEMPLATE,
   DEFAULT_MOSAIC_NAME_TEMPLATE,
+  DEFAULT_GIF_NAME_TEMPLATE,
+  DEFAULT_WEBP_NAME_TEMPLATE,
+  DEFAULT_GIF_OPTIMIZE_NAME_TEMPLATE,
   '{name}_{preset}',
   '{name}_{date}'
 ])
@@ -106,6 +171,14 @@ export function useSettings(options: UseSettingsOptions = {}) {
   const concatPreferCopy = ref(true)
   /** 视频打码：逐帧导出流水线（持久化） */
   const mosaicFrameByFrame = ref(false)
+  /** 视频转动图（会话级，不进 AppSettings） */
+  const gifOutputKind = ref<GifOutputKind>('gif')
+  const gifFps = ref(DEFAULT_GIF_FPS)
+  const gifMaxEdge = ref(DEFAULT_GIF_MAX_EDGE)
+  const gifLoop = ref(DEFAULT_GIF_LOOP)
+  const gifColors = ref(DEFAULT_GIF_COLORS)
+  const gifDither = ref<GifDither>('bayer')
+  const gifWebpQuality = ref(DEFAULT_GIF_WEBP_QUALITY)
   /** 图+视频混剪（任务级，不持久化） */
   const composeIntroPath = ref('')
   const composeIntroDuration = ref(3)
@@ -198,6 +271,23 @@ export function useSettings(options: UseSettingsOptions = {}) {
 
   /** 是否为视频打码模式 */
   const isVideoMosaicMode = computed(() => taskMode.value === 'video-mosaic')
+
+  /** 是否为视频转动图模式 */
+  const isVideoToGifMode = computed(() => taskMode.value === 'video-to-gif')
+
+  /** 是否为多图转动图模式 */
+  const isImagesToGifMode = computed(() => taskMode.value === 'images-to-gif')
+
+  /** 是否为动图优化模式 */
+  const isGifOptimizeMode = computed(() => taskMode.value === 'gif-optimize')
+
+  /** 视频/多图转动图 / 动图优化（共用 GIF 参数面板） */
+  const isGifEncodeMode = computed(
+    () =>
+      taskMode.value === 'video-to-gif' ||
+      taskMode.value === 'images-to-gif' ||
+      taskMode.value === 'gif-optimize'
+  )
 
   /** 是否显示视频压缩高级选项（CRF/编码器等） */
   const isVideoCompressMode = computed(() => taskMode.value === 'compress')
@@ -506,6 +596,49 @@ export function useSettings(options: UseSettingsOptions = {}) {
       delete base.scalePad
     }
 
+    if (
+      taskMode.value === 'video-to-gif' ||
+      taskMode.value === 'images-to-gif' ||
+      taskMode.value === 'gif-optimize'
+    ) {
+      const maxEdge = clampGifMaxEdge(gifMaxEdge.value)
+      const kind = clampGifOutputKind(gifOutputKind.value)
+      const fps = clampGifFps(gifFps.value)
+      const frameDelayMs = Math.max(
+        20,
+        Math.min(10000, Math.round(1000 / fps))
+      )
+      base.maxEdge = maxEdge
+      base.gif = {
+        outputKind: kind,
+        fps,
+        frameDelayMs,
+        loop: clampGifLoop(gifLoop.value),
+        colors: clampGifColors(gifColors.value),
+        dither: clampGifDither(gifDither.value),
+        quality: clampGifWebpQuality(gifWebpQuality.value)
+      }
+      delete base.targetSizeMb
+      delete base.twoPass
+      delete base.watermark
+      delete base.crop
+      delete base.scaleMode
+      delete base.outWidth
+      delete base.outHeight
+      delete base.aspectRatio
+      delete base.scalePad
+      delete base.mosaics
+      delete base.mosaicPipeline
+      delete base.compose
+      delete base.muteAudio
+      delete base.fps
+      delete base.encodePreset
+      delete base.compatProfile
+      delete base.videoAudioBitrate
+      delete base.rotate90
+      delete base.image
+    }
+
     return base
   }
 
@@ -655,6 +788,9 @@ export function useSettings(options: UseSettingsOptions = {}) {
       s.taskMode === 'video-concat' ||
       s.taskMode === 'media-compose' ||
       s.taskMode === 'video-mosaic' ||
+      s.taskMode === 'video-to-gif' ||
+      s.taskMode === 'images-to-gif' ||
+      s.taskMode === 'gif-optimize' ||
       s.taskMode === 'compress'
         ? s.taskMode
         : 'compress'
@@ -889,6 +1025,20 @@ export function useSettings(options: UseSettingsOptions = {}) {
       } else if (mode === 'video-mosaic') {
         nameTemplate.value = DEFAULT_MOSAIC_NAME_TEMPLATE
         nameTemplateCustom.value = false
+      } else if (mode === 'gif-optimize') {
+        nameTemplate.value = DEFAULT_GIF_OPTIMIZE_NAME_TEMPLATE
+        nameTemplateCustom.value = false
+        gifFps.value = DEFAULT_GIF_OPTIMIZE_FPS
+        gifMaxEdge.value = DEFAULT_GIF_MAX_EDGE
+      } else if (mode === 'video-to-gif' || mode === 'images-to-gif') {
+        nameTemplate.value =
+          gifOutputKind.value === 'webp'
+            ? DEFAULT_WEBP_NAME_TEMPLATE
+            : DEFAULT_GIF_NAME_TEMPLATE
+        nameTemplateCustom.value = false
+        if (mode === 'images-to-gif') {
+          gifFps.value = DEFAULT_IMAGES_TO_GIF_FPS
+        }
       } else if (mode === 'audio') {
         nameTemplate.value = DEFAULT_AUDIO_NAME_TEMPLATE
         nameTemplateCustom.value = false
@@ -1000,6 +1150,54 @@ export function useSettings(options: UseSettingsOptions = {}) {
   function onMosaicFrameByFrameChange(v: boolean): void {
     mosaicFrameByFrame.value = Boolean(v)
     persist({ mosaicFrameByFrame: mosaicFrameByFrame.value })
+    options.onOptionsChange?.()
+  }
+
+  function onGifOutputKindChange(v: GifOutputKind): void {
+    gifOutputKind.value = clampGifOutputKind(v)
+    const cur = nameTemplate.value
+    // gif-optimize 固定 {name}_opt，扩展名由 buildOutputPath 按 outputKind 决定
+    if (
+      taskMode.value !== 'gif-optimize' &&
+      (cur === DEFAULT_GIF_NAME_TEMPLATE || cur === DEFAULT_WEBP_NAME_TEMPLATE)
+    ) {
+      nameTemplate.value =
+        gifOutputKind.value === 'webp'
+          ? DEFAULT_WEBP_NAME_TEMPLATE
+          : DEFAULT_GIF_NAME_TEMPLATE
+      nameTemplateCustom.value = false
+      persist({ nameTemplate: nameTemplate.value })
+    }
+    options.onOptionsChange?.()
+  }
+
+  function onGifFpsChange(v: number): void {
+    gifFps.value = clampGifFps(v)
+    options.onOptionsChange?.()
+  }
+
+  function onGifMaxEdgeChange(v: number): void {
+    gifMaxEdge.value = clampGifMaxEdge(v)
+    options.onOptionsChange?.()
+  }
+
+  function onGifLoopChange(v: number): void {
+    gifLoop.value = clampGifLoop(v)
+    options.onOptionsChange?.()
+  }
+
+  function onGifColorsChange(v: number): void {
+    gifColors.value = clampGifColors(v)
+    options.onOptionsChange?.()
+  }
+
+  function onGifDitherChange(v: GifDither): void {
+    gifDither.value = clampGifDither(v)
+    options.onOptionsChange?.()
+  }
+
+  function onGifWebpQualityChange(v: number): void {
+    gifWebpQuality.value = clampGifWebpQuality(v)
     options.onOptionsChange?.()
   }
 
@@ -1397,6 +1595,13 @@ export function useSettings(options: UseSettingsOptions = {}) {
     cropH,
     concatPreferCopy,
     mosaicFrameByFrame,
+    gifOutputKind,
+    gifFps,
+    gifMaxEdge,
+    gifLoop,
+    gifColors,
+    gifDither,
+    gifWebpQuality,
     composeIntroPath,
     composeIntroDuration,
     composeOutroPath,
@@ -1442,6 +1647,10 @@ export function useSettings(options: UseSettingsOptions = {}) {
     isVideoConcatMode,
     isMediaComposeMode,
     isVideoMosaicMode,
+    isVideoToGifMode,
+    isImagesToGifMode,
+    isGifOptimizeMode,
+    isGifEncodeMode,
     isVideoCompressMode,
     buildOptions,
     loadSettings,
@@ -1475,6 +1684,13 @@ export function useSettings(options: UseSettingsOptions = {}) {
     onCropHChange,
     onConcatPreferCopyChange,
     onMosaicFrameByFrameChange,
+    onGifOutputKindChange,
+    onGifFpsChange,
+    onGifMaxEdgeChange,
+    onGifLoopChange,
+    onGifColorsChange,
+    onGifDitherChange,
+    onGifWebpQualityChange,
     onAudioFormatChange,
     onAudioBitrateChange,
     onNotifyOnCompleteChange,

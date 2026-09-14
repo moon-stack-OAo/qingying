@@ -78,9 +78,12 @@ function modeTagType(
   const m = task.options?.mode
   if (m === 'audio') return 'warning'
   if (m === 'image' || m === 'image-crop' || m === 'image-stitch') return 'success'
+  if (m === 'images-to-gif') return 'success'
+  if (m === 'gif-optimize') return 'success'
   if (m === 'video-concat') return 'danger'
   if (m === 'media-compose') return 'warning'
   if (m === 'video-mosaic') return 'danger'
+  if (m === 'video-to-gif') return 'warning'
   return 'info'
 }
 
@@ -111,7 +114,9 @@ function onActionCommand(cmd: string, row: CompressTask): void {
 
 function isStitchTask(task: CompressTask): boolean {
   const m = task.options?.mode
-  return m === 'image-stitch' || m === 'video-concat'
+  return (
+    m === 'image-stitch' || m === 'video-concat' || m === 'images-to-gif'
+  )
 }
 
 function stitchPaths(task: CompressTask): string[] {
@@ -137,8 +142,10 @@ function isStitchEditable(task: CompressTask): boolean {
 
 function stitchToggleLabel(task: CompressTask): string {
   const n = stitchCount(task)
-  const unit = task.options?.mode === 'image-stitch' ? '张' : '段'
-  return `编辑拼接顺序 · ${n} ${unit}`
+  const m = task.options?.mode
+  const unit = m === 'image-stitch' || m === 'images-to-gif' ? '张' : '段'
+  const verb = m === 'images-to-gif' ? '编辑帧顺序' : '编辑拼接顺序'
+  return `${verb} · ${n} ${unit}`
 }
 
 function stitchPreview(task: CompressTask): string {

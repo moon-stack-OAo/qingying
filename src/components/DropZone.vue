@@ -21,17 +21,23 @@ const title = computed(() => {
   if (props.compact) {
     if (m === 'image' || m === 'image-crop') return '拖入追加 · 或点击添加图片'
     if (m === 'image-stitch') return '拖入追加 · 多选即一组拼接'
+    if (m === 'images-to-gif') return '拖入追加 · 多选即一组动图'
     if (m === 'video-concat') return '拖入追加 · 多选即一组拼接'
     if (m === 'media-compose') return '拖入追加主视频'
     if (m === 'video-mosaic') return '打码仅支持单个视频'
+    if (m === 'gif-optimize') return '拖入追加 · 或点击添加动图'
+    if (m === 'video-to-gif') return '拖入追加 · 或点击添加视频'
     if (m === 'audio') return '拖入追加 · 或点击添加视频'
     return '拖入追加 · 或点击添加视频'
   }
   if (m === 'image' || m === 'image-crop') return '拖入图片到此处'
   if (m === 'image-stitch') return '拖入多张图片到此处'
+  if (m === 'images-to-gif') return '拖入多张图片到此处（合成动图）'
+  if (m === 'gif-optimize') return '拖入 GIF / 动图 WebP 到此处（优化体积）'
   if (m === 'video-concat') return '拖入多段视频到此处'
   if (m === 'media-compose') return '拖入主视频到此处'
   if (m === 'video-mosaic') return '拖入单个视频到此处'
+  if (m === 'video-to-gif') return '拖入视频到此处（转 GIF / 动图 WebP）'
   if (m === 'audio') return '拖入视频到此处'
   return '拖入视频到此处'
 })
@@ -39,11 +45,23 @@ const title = computed(() => {
 const hint = computed(() => {
   const m = props.taskMode || 'compress'
   let base =
-    m === 'image' || m === 'image-crop' || m === 'image-stitch'
+    m === 'image' ||
+    m === 'image-crop' ||
+    m === 'image-stitch' ||
+    m === 'images-to-gif'
       ? '支持 JPG / PNG / WebP / BMP / TIFF · 可拖到窗口任意位置'
       : '支持 MP4 / MKV / MOV / AVI / WebM · 可拖到窗口任意位置'
   if (m === 'video-mosaic') {
     base = '仅支持单个视频 · 可拖到窗口任意位置'
+  } else if (m === 'gif-optimize') {
+    base =
+      '仅 GIF / 动图 WebP · 默认最长边 480、约 10fps · 可拖到窗口任意位置'
+  } else if (m === 'video-to-gif') {
+    base =
+      '输出 GIF 或动图 WebP（WebP 通常更小，兼容性略差）· 建议短片段 · 可拖到窗口任意位置'
+  } else if (m === 'images-to-gif') {
+    base =
+      '至少 2 张图 · 按添加顺序成帧 · 输出 GIF / 动图 WebP · 可拖到窗口任意位置'
   } else if (m === 'media-compose') {
     base += ' · 片头/片尾/叠加图在选项中设置'
   } else if (props.showTaskEditHint) {
@@ -54,7 +72,15 @@ const hint = computed(() => {
 
 const step1 = computed(() => {
   const m = props.taskMode || 'compress'
-  if (m === 'image' || m === 'image-crop' || m === 'image-stitch') return '添加图片'
+  if (
+    m === 'image' ||
+    m === 'image-crop' ||
+    m === 'image-stitch' ||
+    m === 'images-to-gif'
+  ) {
+    return '添加图片'
+  }
+  if (m === 'gif-optimize') return '添加动图'
   return '添加视频'
 })
 
@@ -67,6 +93,8 @@ const step2 = computed(() => {
 const step3 = computed(() => {
   const m = props.taskMode || 'compress'
   if (m === 'video-mosaic') return '开始打码'
+  if (m === 'gif-optimize') return '全部开始（优化）'
+  if (m === 'video-to-gif' || m === 'images-to-gif') return '全部开始（转动图）'
   return '全部开始'
 })
 

@@ -474,6 +474,9 @@ function validateStartTask(
   if (mode === 'image-stitch' && paths.length < 2) {
     return { ok: false, error: '图片拼接至少需要 2 张图片' }
   }
+  if (mode === 'images-to-gif' && paths.length < 2) {
+    return { ok: false, error: '多图转动图至少需要 2 张图片' }
+  }
   if (mode === 'video-concat' && paths.length < 2) {
     return { ok: false, error: '视频拼接至少需要 2 个输入文件' }
   }

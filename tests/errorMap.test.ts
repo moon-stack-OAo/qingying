@@ -76,6 +76,22 @@ describe('mapFfmpegError', () => {
     ).toMatch(/没有可用的音频流/)
   })
 
+  it('GIF palette 相关', () => {
+    expect(mapFfmpegError('Error generating palette with palettegen')).toMatch(
+      /GIF 调色板/
+    )
+    expect(mapFfmpegError('paletteuse failed for gif')).toMatch(/GIF 调色板/)
+  })
+
+  it('动图 WebP / libwebp', () => {
+    expect(mapFfmpegError('Error while opening encoder libwebp')).toMatch(
+      /动图 WebP/
+    )
+    expect(
+      mapFfmpegError('Unable to encode webp with quality compression error')
+    ).toMatch(/动图 WebP/)
+  })
+
   it('未匹配规则时脱敏完整路径（仅保留 basename）', () => {
     const winPath = 'D:\\Users\\Alice\\Videos\\demo.mp4'
     const msg = mapFfmpegError(

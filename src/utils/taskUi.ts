@@ -50,6 +50,12 @@ export function modeLabel(mode?: TaskMode | null): string {
       return '图+视频'
     case 'video-mosaic':
       return '打码'
+    case 'video-to-gif':
+      return '动图'
+    case 'images-to-gif':
+      return '多图动图'
+    case 'gif-optimize':
+      return '动图优化'
     case 'compress':
     default:
       return '压缩'
@@ -177,6 +183,49 @@ export function optionsSummary(task: CompressTask): string {
       parts.push(`打码区域: ${o.mosaics.length} 个`)
     } else {
       parts.push('打码区域: 未设置')
+    }
+  } else if (
+    mode === 'video-to-gif' ||
+    mode === 'images-to-gif' ||
+    mode === 'gif-optimize'
+  ) {
+    const g = o.gif
+    const kind = g?.outputKind === 'webp' ? 'webp' : 'gif'
+    if (mode === 'gif-optimize') {
+      parts.push(
+        kind === 'webp' ? '模式: 动图优化 → WebP' : '模式: 动图优化 → GIF'
+      )
+    } else if (mode === 'images-to-gif') {
+      parts.push(
+        kind === 'webp' ? '模式: 多图转动图 WebP' : '模式: 多图转 GIF'
+      )
+    } else {
+      parts.push(
+        kind === 'webp' ? '模式: 视频转动图 WebP' : '模式: 视频转 GIF'
+      )
+    }
+    parts.push(`格式: ${kind === 'webp' ? 'WebP' : 'GIF'}`)
+    parts.push(
+      `帧率: ${g?.fps ?? (mode === 'images-to-gif' || mode === 'gif-optimize' ? 10 : 12)}`
+    )
+    if (g?.frameDelayMs != null && mode === 'images-to-gif') {
+      parts.push(`帧间隔: ${g.frameDelayMs}ms`)
+    }
+    if (o.maxEdge != null && o.maxEdge > 0) {
+      parts.push(`最长边: ${o.maxEdge}`)
+    } else {
+      parts.push('最长边: 不限制')
+    }
+    const loop = g?.loop ?? 0
+    parts.push(loop === 0 ? '循环: 无限' : loop === -1 ? '循环: 不循环' : `循环: ${loop}`)
+    if (kind === 'webp') {
+      if (g?.quality != null) parts.push(`质量: ${g.quality}`)
+    } else {
+      if (g?.colors != null) parts.push(`颜色: ${g.colors}`)
+      if (g?.dither) parts.push(`抖动: ${g.dither}`)
+    }
+    if (mode === 'images-to-gif' && task.inputPaths && task.inputPaths.length > 1) {
+      parts.push(`输入: ${task.inputPaths.length} 张`)
     }
   } else {
     parts.push(`预设: ${o.presetId}`)

@@ -1132,6 +1132,9 @@ describe('buildCropFilter / buildVideoFilter / concat', () => {
     expect(isImageMode('image-stitch')).toBe(true)
     expect(isImageMode('compress')).toBe(false)
     expect(isImageMode('video-concat')).toBe(false)
+    expect(isImageMode('video-to-gif')).toBe(false)
+    expect(isImageMode('images-to-gif')).toBe(false)
+    expect(isImageMode('gif-optimize')).toBe(false)
   })
 })
 
@@ -1353,6 +1356,78 @@ describe('buildOutputPath / suggestUniqueOutputPath', () => {
       })
     )
     expect(path.basename(out)).toBe('demo_mosaic.mp4')
+  })
+
+  it('mode=video-to-gif 默认 .gif 与模板 _gif', () => {
+    const out = buildOutputPath(
+      path.join('D:', 'videos', 'demo.mp4'),
+      baseOptions({
+        mode: 'video-to-gif',
+        format: 'mp4',
+        outputDir: path.join('D:', 'out')
+      })
+    )
+    expect(path.basename(out)).toBe('demo_gif.gif')
+  })
+
+  it('mode=video-to-gif + outputKind=webp → .webp 与 _webp', () => {
+    const out = buildOutputPath(
+      path.join('D:', 'videos', 'demo.mp4'),
+      baseOptions({
+        mode: 'video-to-gif',
+        format: 'mp4',
+        outputDir: path.join('D:', 'out'),
+        gif: { outputKind: 'webp' }
+      })
+    )
+    expect(path.basename(out)).toBe('demo_webp.webp')
+  })
+
+  it('mode=images-to-gif 默认 .gif 与模板 _gif（取首张名）', () => {
+    const out = buildOutputPath(
+      path.join('D:', 'pics', 'frame01.png'),
+      baseOptions({
+        mode: 'images-to-gif',
+        format: 'mp4',
+        outputDir: path.join('D:', 'out')
+      })
+    )
+    expect(path.basename(out)).toBe('frame01_gif.gif')
+  })
+
+  it('mode=images-to-gif + outputKind=webp → .webp', () => {
+    const out = buildOutputPath(
+      path.join('D:', 'pics', 'a.jpg'),
+      baseOptions({
+        mode: 'images-to-gif',
+        outputDir: path.join('D:', 'out'),
+        gif: { outputKind: 'webp' }
+      })
+    )
+    expect(path.basename(out)).toBe('a_webp.webp')
+  })
+
+  it('mode=gif-optimize 默认 .gif 与模板 _opt', () => {
+    const out = buildOutputPath(
+      path.join('D:', 'pics', 'anim.gif'),
+      baseOptions({
+        mode: 'gif-optimize',
+        outputDir: path.join('D:', 'out')
+      })
+    )
+    expect(path.basename(out)).toBe('anim_opt.gif')
+  })
+
+  it('mode=gif-optimize + outputKind=webp → .webp 与 _opt', () => {
+    const out = buildOutputPath(
+      path.join('D:', 'pics', 'anim.webp'),
+      baseOptions({
+        mode: 'gif-optimize',
+        outputDir: path.join('D:', 'out'),
+        gif: { outputKind: 'webp' }
+      })
+    )
+    expect(path.basename(out)).toBe('anim_opt.webp')
   })
 })
 

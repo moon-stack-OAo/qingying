@@ -33,6 +33,17 @@ function isImageMode(mode?: TaskMode | null): boolean {
   return mode === 'image' || mode === 'image-crop' || mode === 'image-stitch'
 }
 
+/** 允许图片扩展名的模式（含多图转动图；勿与 isImageMode/Sharp 混用） */
+function acceptsImageExt(mode?: TaskMode | null): boolean {
+  return isImageMode(mode) || mode === 'images-to-gif'
+}
+
+/** 动图优化仅允许 .gif / .webp */
+function acceptsGifOptimizeExt(fileName: string): boolean {
+  const ext = getExt(fileName)
+  return ext === '.gif' || ext === '.webp'
+}
+
 function needsFfmpeg(mode?: TaskMode | null): boolean {
   return !isImageMode(mode)
 }
@@ -127,7 +138,10 @@ export function useTasks(deps: UseTasksDeps) {
     const ext = getExt(fileName)
     if (!ext) return false
     const m = mode || currentMode()
-    if (isImageMode(m)) {
+    if (m === 'gif-optimize') {
+      return acceptsGifOptimizeExt(fileName)
+    }
+    if (acceptsImageExt(m)) {
       return (IMAGE_EXTENSIONS as string[]).includes(ext)
     }
     return (VIDEO_EXTENSIONS as string[]).includes(ext)
@@ -286,7 +300,10 @@ export function useTasks(deps: UseTasksDeps) {
   function isPathAllowedForMode(filePath: string, mode: TaskMode): boolean {
     const ext = getExtFromPath(filePath)
     if (!ext) return false
-    if (isImageMode(mode)) {
+    if (mode === 'gif-optimize') {
+      return ext === '.gif' || ext === '.webp'
+    }
+    if (acceptsImageExt(mode)) {
       return (IMAGE_EXTENSIONS as string[]).includes(ext)
     }
     return (VIDEO_EXTENSIONS as string[]).includes(ext)
@@ -323,7 +340,8 @@ export function useTasks(deps: UseTasksDeps) {
   }
 
   function invalidMediaMessage(mode: TaskMode): string {
-    if (isImageMode(mode)) return '未添加有效图片文件'
+    if (mode === 'gif-optimize') return '未添加有效动图（仅支持 .gif / .webp）'
+    if (acceptsImageExt(mode)) return '未添加有效图片文件'
     return '未添加有效视频文件'
   }
 
@@ -368,16 +386,22 @@ export function useTasks(deps: UseTasksDeps) {
       return
     }
 
-    // 拼接模式：一次多选 → 一个任务
+    // 拼接 / 多图转动图：一次多选 → 一个任务
     if (
-      (mode === 'image-stitch' || mode === 'video-concat') &&
+      (mode === 'image-stitch' ||
+        mode === 'video-concat' ||
+        mode === 'images-to-gif') &&
       valid.length > 0
     ) {
       const paths = valid.map((f) => f.path)
       const taskOptions = deps.buildOptions()
       const n = paths.length
       const fileName =
-        mode === 'image-stitch' ? `拼接 ${n} 张` : `拼接 ${n} 段`
+        mode === 'image-stitch'
+          ? `拼接 ${n} 张`
+          : mode === 'images-to-gif'
+            ? `动图 ${n} 张`
+            : `拼接 ${n} 段`
       const task: CompressTask = {
         id: genId(),
         inputPath: paths[0],
@@ -393,7 +417,9 @@ export function useTasks(deps: UseTasksDeps) {
       ElMessage.success(
         mode === 'image-stitch'
           ? `已添加拼接任务（${n} 张图片）`
-          : `已添加拼接任务（${n} 段视频）`
+          : mode === 'images-to-gif'
+            ? `已添加多图转动图任务（${n} 张）`
+            : `已添加拼接任务（${n} 段视频）`
       )
       if (invalidCount > 0) {
         ElMessage.warning(`已忽略 ${invalidCount} 个不支持的文件`)
@@ -443,12 +469,20 @@ export function useTasks(deps: UseTasksDeps) {
   }
 
   function stitchFileName(mode: TaskMode, n: number): string {
-    return mode === 'image-stitch' ? `拼接 ${n} 张` : `拼接 ${n} 段`
+    if (mode === 'image-stitch') return `拼接 ${n} 张`
+    if (mode === 'images-to-gif') return `动图 ${n} 张`
+    return `拼接 ${n} 段`
   }
 
   function isStitchEditable(task: CompressTask): boolean {
     const mode = task.options?.mode || currentMode()
-    if (mode !== 'image-stitch' && mode !== 'video-concat') return false
+    if (
+      mode !== 'image-stitch' &&
+      mode !== 'video-concat' &&
+      mode !== 'images-to-gif'
+    ) {
+      return false
+    }
     return task.status === 'pending' || task.status === 'failed'
   }
 
@@ -477,10 +511,14 @@ export function useTasks(deps: UseTasksDeps) {
       patch.error =
         mode === 'image-stitch'
           ? '图片拼接至少需要 2 张图片'
-          : '视频拼接至少需要 2 段视频'
+          : mode === 'images-to-gif'
+            ? '多图转动图至少需要 2 张图片'
+            : '视频拼接至少需要 2 段视频'
     } else if (
       t.error &&
-      (t.error.includes('至少需要') || t.error.includes('拼接'))
+      (t.error.includes('至少需要') ||
+        t.error.includes('拼接') ||
+        t.error.includes('转动图'))
     ) {
       patch.error = undefined
     }
@@ -533,7 +571,9 @@ export function useTasks(deps: UseTasksDeps) {
       error:
         next.length >= 2 &&
         t.error &&
-        (t.error.includes('至少需要') || t.error.includes('拼接'))
+        (t.error.includes('至少需要') ||
+          t.error.includes('拼接') ||
+          t.error.includes('转动图'))
           ? undefined
           : t.error
     })
@@ -589,10 +629,13 @@ export function useTasks(deps: UseTasksDeps) {
       .map((p) => (typeof p === 'string' ? p.trim() : ''))
       .filter(Boolean)
     if (next.length < 2) {
+      const m = t.options?.mode
       ElMessage.warning(
-        t.options?.mode === 'image-stitch'
+        m === 'image-stitch'
           ? '图片拼接至少需要 2 张图片'
-          : '视频拼接至少需要 2 段视频'
+          : m === 'images-to-gif'
+            ? '多图转动图至少需要 2 张图片'
+            : '视频拼接至少需要 2 段视频'
       )
       return
     }
@@ -604,7 +647,9 @@ export function useTasks(deps: UseTasksDeps) {
       outputPath: '',
       error:
         t.error &&
-        (t.error.includes('至少需要') || t.error.includes('拼接'))
+        (t.error.includes('至少需要') ||
+          t.error.includes('拼接') ||
+          t.error.includes('转动图'))
           ? undefined
           : t.error
     }
@@ -662,12 +707,26 @@ export function useTasks(deps: UseTasksDeps) {
   }
 
   function validateTaskForStart(task: CompressTask, mode: TaskMode): string | null {
-    if (mode === 'image-stitch' || mode === 'video-concat') {
+    if (
+      mode === 'image-stitch' ||
+      mode === 'video-concat' ||
+      mode === 'images-to-gif'
+    ) {
       const paths = resolveInputPaths(task)
       if (paths.length < 2) {
         return mode === 'image-stitch'
           ? '图片拼接至少需要 2 张图片'
-          : '视频拼接至少需要 2 段视频'
+          : mode === 'images-to-gif'
+            ? '多图转动图至少需要 2 张图片'
+            : '视频拼接至少需要 2 段视频'
+      }
+    }
+    if (mode === 'gif-optimize') {
+      const p = (task.inputPath || '').trim()
+      if (!p) return '请添加 GIF 或动图 WebP'
+      const ext = getExtFromPath(p)
+      if (ext !== '.gif' && ext !== '.webp') {
+        return '动图优化仅支持 .gif 或 .webp'
       }
     }
     if (mode === 'image-crop') {

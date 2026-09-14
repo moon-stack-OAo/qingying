@@ -19,10 +19,13 @@ import {
   DEFAULT_AUDIO_NAME_TEMPLATE,
   DEFAULT_COMPOSE_NAME_TEMPLATE,
   DEFAULT_CONCAT_NAME_TEMPLATE,
+  DEFAULT_GIF_NAME_TEMPLATE,
+  DEFAULT_GIF_OPTIMIZE_NAME_TEMPLATE,
   DEFAULT_IMAGE_NAME_TEMPLATE,
   DEFAULT_MOSAIC_NAME_TEMPLATE,
   DEFAULT_NAME_TEMPLATE,
-  DEFAULT_VIDEO_AUDIO_BITRATE
+  DEFAULT_VIDEO_AUDIO_BITRATE,
+  DEFAULT_WEBP_NAME_TEMPLATE
 } from './types'
 export {
   buildConcatDemuxerList,
@@ -1656,6 +1659,8 @@ function resolveImageOutputExt(
   * - mode=video-concat：与 compress 类似，默认模板 {name}_concat
   * - mode=media-compose：默认模板 {name}_compose
   * - mode=video-mosaic：默认模板 {name}_mosaic
+  * - mode=video-to-gif|images-to-gif：按 gif.outputKind 输出 .gif / .webp；模板 {name}_gif / {name}_webp
+  * - mode=gif-optimize：按 gif.outputKind 输出；默认模板 {name}_opt
   * @param now 可选时钟注入，便于单测 date/time 占位符
   */
 export function buildOutputPath(
@@ -1670,6 +1675,8 @@ export function buildOutputPath(
   const isConcat = mode === 'video-concat'
   const isCompose = mode === 'media-compose'
   const isMosaic = mode === 'video-mosaic'
+  const isGif = mode === 'video-to-gif' || mode === 'images-to-gif'
+  const isGifOptimize = mode === 'gif-optimize'
 
   let ext: string
   let defaultTpl: string
@@ -1688,6 +1695,14 @@ export function buildOutputPath(
   } else if (isMosaic) {
     ext = options.format || 'mp4'
     defaultTpl = DEFAULT_MOSAIC_NAME_TEMPLATE
+  } else if (isGifOptimize) {
+    ext = options.gif?.outputKind === 'webp' ? 'webp' : 'gif'
+    defaultTpl = DEFAULT_GIF_OPTIMIZE_NAME_TEMPLATE
+  } else if (isGif) {
+    const kind = options.gif?.outputKind === 'webp' ? 'webp' : 'gif'
+    ext = kind
+    defaultTpl =
+      kind === 'webp' ? DEFAULT_WEBP_NAME_TEMPLATE : DEFAULT_GIF_NAME_TEMPLATE
   } else {
     ext = options.format || 'mp4'
     defaultTpl = DEFAULT_NAME_TEMPLATE

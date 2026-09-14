@@ -25,6 +25,9 @@ import {
   runMediaCompose,
   runMosaicFrameByFrame,
   runVideoConcat,
+  runGifOptimize,
+  runImagesToGif,
+  runVideoToGif,
   uniqueOutputPathAsync
 } from './ffmpeg'
 import { processImage } from './image'
@@ -641,6 +644,58 @@ export class TaskQueue {
 
       if (mode === 'media-compose') {
         const result = await runMediaCompose({
+          taskId: task.id,
+          inputPath: task.inputPath,
+          outputPath: task.outputPath,
+          options: task.options,
+          onProgress,
+          signal
+        })
+        this.emitResult(task, result, signal, item)
+        return
+      }
+
+      if (mode === 'video-to-gif') {
+        const result = await runVideoToGif({
+          taskId: task.id,
+          inputPath: task.inputPath,
+          outputPath: task.outputPath,
+          options: task.options,
+          onProgress,
+          signal
+        })
+        this.emitResult(task, result, signal, item)
+        return
+      }
+
+      if (mode === 'images-to-gif') {
+        if (paths.length < 2) {
+          this.emitResult(
+            task,
+            {
+              code: 1,
+              error: '多图转动图至少需要 2 张图片',
+              inputSize: task.inputSize
+            },
+            signal,
+            item
+          )
+          return
+        }
+        const result = await runImagesToGif({
+          taskId: task.id,
+          inputPaths: paths,
+          outputPath: task.outputPath,
+          options: task.options,
+          onProgress,
+          signal
+        })
+        this.emitResult(task, result, signal, item)
+        return
+      }
+
+      if (mode === 'gif-optimize') {
+        const result = await runGifOptimize({
           taskId: task.id,
           inputPath: task.inputPath,
           outputPath: task.outputPath,
