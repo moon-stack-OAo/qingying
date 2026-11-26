@@ -24,6 +24,9 @@ defineProps<{
       class="summary-ratio"
     >
       体积 {{ ratio }}
+      <span class="summary-ratio-sizes">
+        · {{ formatFileSize(totalIn) }} → {{ formatFileSize(totalOut) }}
+      </span>
     </span>
   </div>
 </template>

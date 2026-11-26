@@ -93,8 +93,8 @@ function onClosed(): void {
 .dlg-title {
   margin: 0;
   font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--app-fg);
   line-height: 1.3;
 }
@@ -107,8 +107,8 @@ function onClosed(): void {
 }
 
 .close-banner {
-  margin: 0 0 14px;
-  padding: 10px 12px;
+  margin: 0 0 16px;
+  padding: 12px;
   border-radius: var(--radius-sm);
   border: 1px solid color-mix(in oklch, var(--warn) 40%, var(--border));
   background: var(--warn-soft);
@@ -118,7 +118,7 @@ function onClosed(): void {
 }
 
 .close-banner strong {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .close-remember {

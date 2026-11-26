@@ -89,19 +89,23 @@ function selectMode(mode: TaskMode): void {
 }
 
 .mode-sidebar-nav :deep(.el-scrollbar__view) {
-  padding: 8px 0 4px;
+  padding: 12px 0 8px;
 }
 
 .nav-group {
-  padding: 8px 10px 4px;
+  padding: 0 12px;
+}
+
+.nav-group + .nav-group {
+  margin-top: 16px;
 }
 
 .nav-label {
-  padding: 4px 8px 8px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  padding: 0 8px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--app-fg-muted);
 }
 
@@ -110,8 +114,9 @@ function selectMode(mode: TaskMode): void {
   align-items: center;
   gap: 8px;
   width: 100%;
+  height: 32px;
   text-align: left;
-  padding: 8px 10px;
+  padding: 0 8px;
   margin-bottom: 2px;
   border: 0;
   border-radius: var(--radius-sm, 6px);
@@ -121,8 +126,8 @@ function selectMode(mode: TaskMode): void {
   font-size: var(--fs-sm);
   cursor: pointer;
   transition:
-    background 0.12s,
-    color 0.12s;
+    background 0.15s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.15s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .nav-item:hover {
@@ -160,7 +165,7 @@ function selectMode(mode: TaskMode): void {
   padding: 12px;
   border-top: 1px solid var(--panel-border);
   color: var(--app-fg-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
 }

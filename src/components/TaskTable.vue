@@ -543,10 +543,10 @@ function stitchPreview(task: CompressTask): string {
   display: inline-flex;
   align-items: center;
   height: 20px;
-  padding: 0 7px;
-  border-radius: 999px;
+  padding: 0 6px;
+  border-radius: 4px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1;
   border: 1px solid transparent;
   white-space: nowrap;
@@ -603,7 +603,7 @@ function stitchPreview(task: CompressTask): string {
 
 .detail-pre {
   margin: 0;
-  padding: var(--space-2) 10px;
+  padding: var(--space-2) 12px;
   background: var(--notes-bg);
   border-radius: var(--radius-xs);
   font-size: var(--fs-sm);
@@ -692,7 +692,7 @@ function stitchPreview(task: CompressTask): string {
 .file-cell-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
   padding: 2px 0;
 }

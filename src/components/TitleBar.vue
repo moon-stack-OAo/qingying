@@ -7,7 +7,7 @@ import {PRODUCT_NAME} from '@shared/brand'
 const props = defineProps<{
   appVersion: string
   ffmpegStatus: FfmpegStatus
-  /** 有可用更新时在版本旁显示 NEW */
+  /** 有可用更新时在版本旁显示提示 */
   updateAvailable?: boolean
   /** 远端版本号，用于 tooltip */
   updateVersion?: string
@@ -33,7 +33,7 @@ const showUpdateBadge = computed(
   () => Boolean(props.updateAvailable || props.updateDownloaded)
 )
 const updateBadgeLabel = computed(() =>
-  props.updateDownloaded ? '就绪' : 'NEW'
+  props.updateDownloaded ? '就绪' : '更新'
 )
 const updateBadgeTip = computed(() => {
   const ver = props.updateVersion ? ` v${props.updateVersion}` : ''
@@ -195,8 +195,8 @@ async function close(): Promise<void> {
 .title-bar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 10px 0 12px;
+  gap: 8px;
+  padding: 0 8px 0 12px;
   min-width: 0;
   -webkit-app-region: drag;
 }
@@ -204,7 +204,7 @@ async function close(): Promise<void> {
 .title-bar-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
   /* 需接收悬停以显示 tooltip，不可整块 drag */
   -webkit-app-region: no-drag;
@@ -227,8 +227,8 @@ async function close(): Promise<void> {
 
 .title-bar-name {
   font-size: var(--fs-md);
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--app-fg);
   white-space: nowrap;
   overflow: hidden;
@@ -249,35 +249,31 @@ async function close(): Promise<void> {
 .title-bar-new {
   margin: 0 0 0 2px;
   padding: 0 6px;
-  height: 16px;
-  border: none;
-  border-radius: 999px;
+  height: 18px;
+  border: 1px solid color-mix(in oklch, var(--accent) 35%, var(--panel-border));
+  border-radius: 4px;
   flex-shrink: 0;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
   line-height: 1;
-  color: var(--accent-fg, #fff);
-  background: var(--accent);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 35%, transparent);
+  color: var(--accent);
+  background: var(--accent-soft);
   cursor: pointer;
   -webkit-app-region: no-drag;
   transition:
-    transform 0.12s,
-    filter 0.12s,
-    box-shadow 0.12s;
-  animation: title-bar-new-pulse 2.4s ease-in-out infinite;
+    background 0.15s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.15s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.15s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .title-bar-new:hover {
-  filter: brightness(1.08);
-  transform: translateY(-0.5px);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 45%, transparent);
+  background: color-mix(in oklch, var(--accent) 22%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 45%, var(--panel-border));
 }
 
 .title-bar-new:active {
-  transform: translateY(0);
-  filter: brightness(0.96);
+  background: color-mix(in oklch, var(--accent) 28%, transparent);
 }
 
 .title-bar-new:focus-visible {
@@ -286,41 +282,28 @@ async function close(): Promise<void> {
 }
 
 .title-bar-new.is-ready {
-  background: var(--status-ok, #16a34a);
-  color: #fff;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--status-ok, #22c55e) 40%, transparent);
-  animation: none;
-}
-
-@keyframes title-bar-new-pulse {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 1px color-mix(in oklch, var(--accent) 35%, transparent),
-      0 0 0 0 color-mix(in oklch, var(--accent) 0%, transparent);
-  }
-  50% {
-    box-shadow:
-      0 0 0 1px color-mix(in oklch, var(--accent) 45%, transparent),
-      0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent);
-  }
+  color: var(--status-ok, #16a34a);
+  background: var(--ok-soft);
+  border-color: color-mix(in oklch, var(--status-ok, #16a34a) 35%, var(--panel-border));
 }
 
 .title-bar-status {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   flex-shrink: 0;
   margin-left: 2px;
-  padding: 2px 8px 2px 7px;
-  border-radius: 999px;
+  padding: 0;
+  border-radius: 0;
   font-size: var(--fs-xs);
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.2;
   white-space: nowrap;
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--app-fg-muted);
+  background: transparent;
   /* 需接收悬停以显示路径 tooltip */
   -webkit-app-region: no-drag;
 }
@@ -334,13 +317,20 @@ async function close(): Promise<void> {
 }
 
 .title-bar-status.is-ready {
+  color: var(--app-fg-muted);
+}
+
+.title-bar-status.is-ready .title-bar-status-dot {
   color: var(--el-color-success);
-  background: color-mix(in srgb, var(--el-color-success) 14%, transparent);
+  background: var(--el-color-success);
 }
 
 .title-bar-status.is-bad {
   color: var(--el-color-danger);
-  background: color-mix(in srgb, var(--el-color-danger) 14%, transparent);
+}
+
+.title-bar-status.is-bad .title-bar-status-dot {
+  background: currentColor;
 }
 
 .title-bar-drag {

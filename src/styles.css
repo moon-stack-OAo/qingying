@@ -67,7 +67,7 @@
   --space-3: var(--gap-md);
   --space-4: var(--gap-lg);
   --space-5: 20px;
-  --space-page: 14px;
+  --space-page: 16px;
   --space-gap: var(--space-3);
   --fs-xs: 12px;
   --fs-sm: 13px;
@@ -293,7 +293,7 @@ body,
 
 .shell {
   display: grid;
-  grid-template-columns: 200px 1fr;
+  grid-template-columns: 240px 1fr;
   min-height: 0;
   flex: 1;
 }
@@ -345,17 +345,17 @@ body,
   background-origin: border-box;
   /* 用透明边框占位，实际描边来自渐变（非 solid 原生框线） */
   border: 2px solid transparent;
-  padding: 36px var(--space-5) 32px;
+  padding: 32px var(--space-5);
   text-align: center;
   color: var(--app-fg-muted);
   cursor: pointer;
   box-shadow: var(--panel-shadow);
   transition:
-    background 0.2s,
-    box-shadow 0.2s,
-    padding 0.2s,
-    transform 0.1s,
-    color 0.2s;
+    background 0.15s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.15s cubic-bezier(0.22, 1, 0.36, 1),
+    padding 0.15s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.12s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.15s cubic-bezier(0.22, 1, 0.36, 1);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -365,7 +365,7 @@ body,
 }
 
 .drop-zone.compact {
-  padding: 10px var(--space-page);
+  padding: 12px var(--space-page);
   flex-direction: row;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-3);
@@ -396,9 +396,7 @@ body,
   background-clip: padding-box, border-box;
   background-origin: border-box;
   border: 2px solid transparent;
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--drop-active-color) var(--overlay-focus), transparent),
-    var(--panel-shadow);
+  box-shadow: var(--panel-shadow);
 }
 
 .drop-zone:hover {
@@ -430,9 +428,37 @@ body,
   opacity: 0.9;
 }
 
+/* 视频空态：极淡时间线刻度（剪辑台气质，不抢主文案） */
+.drop-zone .drop-timeline {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  width: min(280px, 72%);
+  height: 12px;
+  margin-bottom: var(--space-1);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.drop-zone .drop-tick {
+  width: 1px;
+  height: 6px;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.drop-zone .drop-tick.major {
+  height: 12px;
+}
+
+.drop-zone:hover .drop-timeline,
+.drop-zone.active .drop-timeline {
+  opacity: 0.7;
+}
+
 .drop-zone .drop-title {
   font-size: var(--fs-xl);
-  font-weight: 600;
+  font-weight: 500;
   color: inherit;
 }
 
@@ -442,12 +468,12 @@ body,
 
 .drop-zone .drop-steps {
   list-style: none;
-  margin: var(--space-1) 0 2px;
+  margin: var(--space-1) 0 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: var(--space-2) 18px;
+  gap: var(--space-2) 16px;
   font-size: var(--fs-md);
   color: var(--app-fg-secondary);
 }
@@ -498,7 +524,7 @@ body,
 
 .panel-title {
   font-size: var(--fs-lg);
-  font-weight: 600;
+  font-weight: 500;
   margin-bottom: var(--space-2);
   display: flex;
   align-items: center;
@@ -526,7 +552,7 @@ body,
 .options-row {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3) 18px;
+  gap: var(--space-3) 16px;
   align-items: center;
 }
 
@@ -603,12 +629,12 @@ body,
 
 .save-good {
   color: var(--status-ok);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .save-bad {
   color: var(--status-warn);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .summary-bar {
@@ -616,7 +642,7 @@ body,
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
   font-size: var(--fs-md);
   color: var(--app-fg-secondary);
   padding-top: var(--space-2);
@@ -624,7 +650,7 @@ body,
 }
 
 .summary-bar .summary-main b {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--app-fg);
   font-variant-numeric: tabular-nums;
 }
@@ -640,8 +666,15 @@ body,
 }
 
 .summary-bar .summary-ratio {
-  font-weight: 600;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+.summary-bar .summary-ratio-sizes {
+  font-weight: 400;
+  opacity: 0.72;
+  margin-left: var(--space-1);
 }
 
 /* 设置抽屉：内容区滚动由各 Tab 内 el-scrollbar 承接 */
@@ -702,9 +735,9 @@ html.dark .el-drawer {
 .el-dialog__title,
 .el-drawer__title {
   color: var(--app-fg);
-  font-weight: 600;
+  font-weight: 500;
   font-size: 15px;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 .el-overlay-dialog .el-dialog,
@@ -774,7 +807,7 @@ html.dark .el-drawer {
 
 .el-drawer.opt-advanced-drawer .el-drawer__header {
   margin-bottom: 0;
-  padding: 14px 16px 12px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--panel-border);
 }
 

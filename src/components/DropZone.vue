@@ -98,6 +98,20 @@ const step3 = computed(() => {
   return '全部开始'
 })
 
+/** 仅视频相关大空态显示淡时间线刻度（剪辑台气质） */
+const showTimeline = computed(() => {
+  if (props.compact) return false
+  const m = props.taskMode || 'compress'
+  return (
+    m === 'compress' ||
+    m === 'audio' ||
+    m === 'video-concat' ||
+    m === 'media-compose' ||
+    m === 'video-mosaic' ||
+    m === 'video-to-gif'
+  )
+})
+
 function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault()
@@ -127,6 +141,18 @@ function onKeydown(e: KeyboardEvent): void {
     </template>
 
     <template v-else>
+      <div
+        v-if="showTimeline"
+        class="drop-timeline"
+        aria-hidden="true"
+      >
+        <span
+          v-for="i in 17"
+          :key="i"
+          class="drop-tick"
+          :class="{ major: (i - 1) % 4 === 0 }"
+        />
+      </div>
       <div class="drop-title">{{ title }}</div>
       <ol class="drop-steps">
         <li><span class="step-num">①</span>{{ step1 }}</li>

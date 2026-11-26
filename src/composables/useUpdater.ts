@@ -38,7 +38,7 @@ export function useUpdater() {
       if (payload.message?.includes('取消') && updateDialogVisible.value) {
         ElMessage.info(payload.message)
       } else if (!silent) {
-        // 启动检查 / 手动检查：弹窗；定时静默检查只更新标题栏 NEW
+        // 启动检查 / 手动检查：弹窗；定时静默检查只更新标题栏提示
         updateDialogVisible.value = true
       }
     } else if (payload.state === 'downloaded') {

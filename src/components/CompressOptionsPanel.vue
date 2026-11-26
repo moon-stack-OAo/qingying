@@ -2665,7 +2665,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 }
 
 .compose-summary {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   font-size: 12px;
   color: var(--app-fg-muted);
   line-height: 1.45;
@@ -2701,7 +2701,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 .options-header-left {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
   flex: 1;
 }

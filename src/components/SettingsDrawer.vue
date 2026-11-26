@@ -851,8 +851,8 @@ function onPathKeydown(e: KeyboardEvent): void {
 .dlg-title {
   margin: 0;
   font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--app-fg);
   line-height: 1.3;
 }
@@ -895,7 +895,7 @@ function onPathKeydown(e: KeyboardEvent): void {
 
 .settings-tabs :deep(.el-tabs__item.is-active) {
   color: var(--accent);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .settings-tabs :deep(.el-tabs__active-bar) {
@@ -930,12 +930,11 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .section-label {
-  margin: 20px 0 10px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  margin: 24px 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--muted);
 }
 
@@ -947,7 +946,7 @@ function onPathKeydown(e: KeyboardEvent): void {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
   min-height: 28px;
 }
 
@@ -966,7 +965,7 @@ function onPathKeydown(e: KeyboardEvent): void {
 .setting-field + .section-label,
 .setting-row.actions + .section-label,
 .setting-hint + .section-label {
-  margin-top: 22px;
+  margin-top: 24px;
 }
 
 .setting-meta {
@@ -977,7 +976,7 @@ function onPathKeydown(e: KeyboardEvent): void {
 .setting-meta strong {
   display: block;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--fg);
 }
 
@@ -1091,7 +1090,7 @@ function onPathKeydown(e: KeyboardEvent): void {
 
 .path-block {
   width: 100%;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
@@ -1112,7 +1111,7 @@ function onPathKeydown(e: KeyboardEvent): void {
 
 .setting-error-block {
   margin: 0 0 12px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border-radius: var(--radius-sm);
   border: 1px solid color-mix(in oklch, var(--danger) 35%, var(--border));
   background: var(--danger-soft);
@@ -1123,8 +1122,8 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .setting-warn-block {
-  margin: 0 0 10px;
-  padding: 8px 10px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
   border-radius: var(--radius-sm);
   border: 1px solid color-mix(in oklch, var(--warning, #e6a23c) 40%, var(--border));
   background: color-mix(in oklch, var(--warning, #e6a23c) 12%, var(--bg));
@@ -1153,9 +1152,9 @@ function onPathKeydown(e: KeyboardEvent): void {
 
 .lan-pair-code {
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.12em;
-  padding: 4px 10px;
+  padding: 4px 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg-soft, var(--bg));
@@ -1190,7 +1189,7 @@ function onPathKeydown(e: KeyboardEvent): void {
 
 .lan-url-btn {
   width: 100%;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);

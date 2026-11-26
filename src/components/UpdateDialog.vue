@@ -495,8 +495,8 @@ const primaryButtonType = computed(() => {
 .dlg-title {
   margin: 0;
   font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--app-fg);
   line-height: 1.3;
 }
@@ -511,7 +511,7 @@ const primaryButtonType = computed(() => {
 .update-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   min-height: 0;
 }
 
@@ -564,9 +564,9 @@ const primaryButtonType = computed(() => {
 .hero-title {
   margin-top: 4px;
   font-size: 17px;
-  font-weight: 650;
+  font-weight: 500;
   font-family: var(--font-display);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--fg);
   line-height: 1.25;
 }
@@ -584,7 +584,7 @@ const primaryButtonType = computed(() => {
   align-items: center;
   height: 22px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: 6px;
   font-family: var(--font-mono);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -642,13 +642,13 @@ const primaryButtonType = computed(() => {
   flex-shrink: 0;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--accent);
 }
 
 .progress {
   height: 8px;
-  border-radius: 999px;
+  border-radius: 4px;
   background: color-mix(in oklch, var(--fg) 8%, var(--bg));
   border: 1px solid var(--border);
   overflow: hidden;
@@ -657,21 +657,9 @@ const primaryButtonType = computed(() => {
 .progress > i {
   display: block;
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    color-mix(in oklch, var(--accent) 75%, white),
-    var(--accent)
-  );
+  background: var(--accent);
   border-radius: inherit;
-  transition: width 0.25s ease;
-}
-
-html.dark .progress > i {
-  background: linear-gradient(
-    90deg,
-    color-mix(in oklch, var(--accent) 70%, black),
-    var(--accent)
-  );
+  transition: width 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .notes-wrap {
@@ -682,11 +670,10 @@ html.dark .progress > i {
 }
 
 .notes-label {
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--muted);
 }
 
@@ -700,8 +687,8 @@ html.dark .progress > i {
 .notes-inner {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 12px;
 }
 
 .notes {
@@ -721,7 +708,7 @@ html.dark .progress > i {
 
 .notes-heading {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--fg);
 }
 
@@ -752,11 +739,10 @@ html.dark .progress > i {
 }
 
 .preview-label {
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--muted);
 }
 
@@ -770,7 +756,7 @@ html.dark .progress > i {
   height: 24px;
   padding: 0 8px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--bg);
   color: var(--muted);
   font-size: 11px;
@@ -786,13 +772,13 @@ html.dark .progress > i {
   color: var(--accent);
   border-color: color-mix(in oklch, var(--accent) 40%, var(--border));
   background: var(--accent-soft);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .dlg-foot {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
 }
 
@@ -804,10 +790,10 @@ html.dark .progress > i {
   margin: 0;
   width: 100%;
   height: 36px;
-  border-radius: 999px;
+  border-radius: 8px;
   font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .dlg-foot :deep(.btn-secondary) {
