@@ -454,8 +454,8 @@ function showInsertAfterLast(): boolean {
 .dlg-title {
   margin: 0;
   font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--app-fg);
   line-height: 1.3;
 }
@@ -478,14 +478,14 @@ function showInsertAfterLast(): boolean {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 14px;
+  gap: 12px 16px;
   margin-bottom: 12px;
 }
 
 .opt-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .label {
@@ -526,7 +526,7 @@ function showInsertAfterLast(): boolean {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 12px;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   background: var(--surface-2, var(--notes-bg));
@@ -567,7 +567,7 @@ function showInsertAfterLast(): boolean {
   background: var(--bg, var(--app-bg));
   color: var(--app-fg-muted);
   cursor: grab;
-  letter-spacing: -2px;
+  letter-spacing: 0;
   text-align: center;
   line-height: 28px;
   touch-action: none;
@@ -606,7 +606,7 @@ function showInsertAfterLast(): boolean {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--app-fg);
-  font-weight: 600;
+  font-weight: 500;
   font-size: 13px;
 }
 
@@ -619,7 +619,7 @@ function showInsertAfterLast(): boolean {
 .footer-extra {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin-top: 12px;
   flex-wrap: wrap;
 }

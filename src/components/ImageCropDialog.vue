@@ -324,8 +324,8 @@ function onCancel(): void {
 .dlg-title {
   margin: 0;
   font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--app-fg);
   line-height: 1.3;
 }
@@ -361,7 +361,7 @@ function onCancel(): void {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .crop-dialog-toolbar .label {
@@ -378,7 +378,7 @@ function onCancel(): void {
   display: flex;
   flex-wrap: wrap;
   gap: 12px 16px;
-  margin-top: 10px;
+  margin-top: 12px;
   font-size: 12px;
   color: var(--app-fg-muted);
   font-variant-numeric: tabular-nums;

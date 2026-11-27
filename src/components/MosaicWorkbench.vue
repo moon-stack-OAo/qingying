@@ -247,7 +247,7 @@ const nextStepHint = computed(() => {
 .mosaic-file-name {
   display: block;
   font-size: var(--fs-lg);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--app-fg);
   overflow: hidden;
   text-overflow: ellipsis;

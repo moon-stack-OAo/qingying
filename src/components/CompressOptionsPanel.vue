@@ -2655,13 +2655,13 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   min-width: 0;
 }
 
 .crop-compose-alert,
 .compose-empty-alert {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .compose-summary {
@@ -2681,8 +2681,8 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 
 .encoder-chip {
   display: inline-block;
-  padding: 0 5px;
-  border-radius: 3px;
+  padding: 0 6px;
+  border-radius: 4px;
   font-size: 11px;
   line-height: 18px;
   background: color-mix(in srgb, var(--app-fg) 8%, transparent);
@@ -2724,7 +2724,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 
 .options-title {
   font-size: var(--fs-lg);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--app-fg);
   white-space: nowrap;
   line-height: 1.4;
@@ -2742,13 +2742,13 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px 14px;
+  gap: 12px 16px;
   min-width: 0;
 }
 
 .opt-row + .opt-row {
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
   box-shadow: inset 0 1px 0 0 color-mix(in srgb, var(--panel-border) 80%, transparent);
 }
 
@@ -2816,8 +2816,8 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 }
 
 .opt-advanced {
-  margin-top: 10px;
-  padding-top: 6px;
+  margin-top: 12px;
+  padding-top: 8px;
   box-shadow: inset 0 1px 0 0 color-mix(in srgb, var(--panel-border) 80%, transparent);
 }
 
@@ -2874,7 +2874,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 }
 
 .opt-advanced-body .opt-row + .opt-row {
-  margin-top: 14px;
+  margin-top: 12px;
   padding-top: 12px;
   box-shadow: inset 0 1px 0 0 color-mix(in srgb, var(--panel-border) 70%, transparent);
 }
@@ -2885,7 +2885,7 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 
 .adv-drawer-title {
   font-size: var(--fs-lg);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--app-fg);
   line-height: 1.3;
 }

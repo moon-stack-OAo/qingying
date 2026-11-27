@@ -574,7 +574,7 @@ const primaryButtonType = computed(() => {
 .hero-version {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
   justify-content: center;
 }
@@ -666,7 +666,7 @@ const primaryButtonType = computed(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .notes-label {
@@ -725,7 +725,7 @@ const primaryButtonType = computed(() => {
   font-family: var(--font-mono);
   font-size: 0.92em;
   padding: 0 4px;
-  border-radius: 3px;
+  border-radius: 4px;
   background: var(--fg-soft);
   color: var(--fg);
 }
@@ -733,7 +733,7 @@ const primaryButtonType = computed(() => {
 .preview-bar {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   padding-top: 4px;
   border-top: 1px dashed var(--border);
 }

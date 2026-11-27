@@ -89,7 +89,7 @@ function selectMode(mode: TaskMode): void {
 }
 
 .mode-sidebar-nav :deep(.el-scrollbar__view) {
-  padding: 12px 0 8px;
+  padding: 12px 0 12px;
 }
 
 .nav-group {

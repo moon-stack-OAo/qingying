@@ -300,8 +300,8 @@ watch(
 .dlg-title {
   margin: 0;
   font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--app-fg);
   line-height: 1.3;
 }
@@ -329,7 +329,7 @@ watch(
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   font-size: 12px;
   color: var(--app-fg-secondary);
 }
@@ -339,7 +339,7 @@ watch(
 }
 
 .rule-form {
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 .mode-select {
@@ -357,7 +357,7 @@ watch(
 }
 
 .frame-alert {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .preview-wrap {
@@ -396,9 +396,9 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 12px;
   border-bottom: 1px solid var(--panel-border);
-  font-weight: 600;
+  font-weight: 500;
   font-size: 13px;
   color: var(--app-fg);
 }
@@ -412,14 +412,14 @@ watch(
   padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .region-card {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  padding: 10px;
+  gap: 8px;
+  padding: 12px;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   background: var(--surface, var(--panel-bg));
@@ -431,7 +431,7 @@ watch(
 }
 
 .region-name {
-  font-weight: 600;
+  font-weight: 500;
   font-size: 13px;
   color: var(--app-fg);
 }

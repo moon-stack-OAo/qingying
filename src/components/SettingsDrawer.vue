@@ -1029,8 +1029,8 @@ function onPathKeydown(e: KeyboardEvent): void {
 .setting-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
 .setting-field label {
@@ -1140,7 +1140,7 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .lan-bind-hint {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
 }
 
 .lan-pair-row {

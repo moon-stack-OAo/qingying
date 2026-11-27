@@ -290,7 +290,7 @@ async function close(): Promise<void> {
 .title-bar-status {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
   margin-left: 2px;
   padding: 0;

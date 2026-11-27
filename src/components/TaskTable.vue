@@ -829,7 +829,7 @@ function stitchPreview(task: CompressTask): string {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 10px;
+  gap: 8px 12px;
   margin-top: 4px;
   max-width: 100%;
 }
